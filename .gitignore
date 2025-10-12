@@ -1,0 +1,22 @@
+# Byte-compiled Python 3.x source files
+*.py[cod]
+__pycache__/
+# Distribution archives
+*.egg-info/
+# Database storage
+*.db
+*.sqlite3
+
+# Log files
+*.log
+
+# Compiled Python files
+*.pyc
+*.pyo
+*.pyd
+
+# macOS metadata
+.DS_Store
+
+# Environment variables (if not handled securely elsewhere)
+.env
