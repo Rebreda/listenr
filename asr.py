@@ -101,7 +101,7 @@ class WhisperASR:
         storage_base = cfg.get_setting(
             'Storage',
             'audio_clips_path',
-            os.path.join(os.path.expanduser("~"), ".listnr", "audio_clips")
+            os.path.join(os.path.expanduser("~"), ".listenr", "audio_clips")
         )
         self.audio_clips_dir = os.path.expanduser(storage_base)
         self.clip_format = cfg.get_setting('Storage', 'clip_format', 'wav').lower()
@@ -142,28 +142,24 @@ class WhisperASR:
         self.last_transcription = ""
     
     def load_whisper_model(self):
-        """Load Whisper model based on config"""
-        model_size = cfg.get_setting('Whisper', 'model_size')
-        device = cfg.get_setting('Whisper', 'device')
-        compute_type = cfg.get_setting('Whisper', 'compute_type')
-        
+        """Load Whisper model based on config (faster-whisper)"""
+        model_size = cfg.get_setting('Whisper', 'model_size', 'base')
+        device = cfg.get_setting('Whisper', 'device', 'cpu')
+        compute_type = cfg.get_setting('Whisper', 'compute_type', 'float16')
+
         # Auto-adjust compute_type based on device
-        if device == 'cuda' and compute_type == 'int8':
+        if device in ('cuda', 'gpu') and compute_type == 'int8':
             compute_type = 'float16'
-            self.logger.info("Using float16 compute type for CUDA")
-        elif device == 'cpu' and compute_type not in ['int8', 'float32']:
+            self.logger.info("Using float16 compute type for CUDA/GPU")
+        elif device == 'cpu' and compute_type not in ('int8', 'float32'):
             compute_type = 'int8'
             self.logger.info("Using int8 compute type for CPU")
-        
-        self.logger.info(f"Loading Whisper model: {model_size} on {device}")
+
+        self.logger.info(f"Loading Whisper model: {model_size} on {device} (faster-whisper, compute_type={compute_type})")
         try:
             from faster_whisper import WhisperModel
-            self.whisper_model = WhisperModel(
-                model_size,
-                device=device,
-                compute_type=compute_type
-            )
-            self.logger.info("Whisper model loaded successfully")
+            self.whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
+            self.logger.info("Whisper model loaded successfully (faster-whisper)")
         except ImportError:
             self.logger.error("faster-whisper not installed. Install with: pip install faster-whisper")
             sys.exit(1)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ASR Monitor - Real-time monitoring and assessment for listnr transcription system
+ASR Monitor - Real-time monitoring and assessment for listenr transcription system
 Tracks transcription quality, performance metrics, and system resources
 """
 
@@ -220,7 +220,7 @@ class SystemMonitor:
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 cmdline = ' '.join(proc.info['cmdline'] or [])
-                if 'asr.py' in cmdline or 'listnr' in cmdline:
+                if 'asr.py' in cmdline or 'listenr' in cmdline:
                     asr_processes.append(proc)
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
@@ -281,7 +281,7 @@ class MonitorUI:
         self.stdscr.addstr(y, 0, "╔" + "═" * 78 + "╗")
         y += 1
         self.stdscr.addstr(y, 0, "║", curses.color_pair(1))
-        self.stdscr.addstr(y, 2, "LISTNR ASR MONITOR", curses.color_pair(1) | curses.A_BOLD)
+        self.stdscr.addstr(y, 2, "listenr ASR MONITOR", curses.color_pair(1) | curses.A_BOLD)
         self.stdscr.addstr(y, 35, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), curses.color_pair(4))
         self.stdscr.addstr(y, 79, "║", curses.color_pair(1))
         y += 1
@@ -295,9 +295,8 @@ class MonitorUI:
         # Session info
         self.stdscr.addstr(y, 0, "Session Info:", curses.A_BOLD)
         y += 1
-        self.stdscr.addstr(y, 2, f"Duration: {stats.get('session_duration', 'N/A')}")
-        self.stdscr.addstr(y, 30, f"Total: {stats.get('total_transcriptions', 0)} segments")
-        self.stdscr.addstr(y, 55, f"Last: {stats.get('last_activity', 'N/A')}")
+        self.stdscr.addstr(y, 2, f"Total: {stats.get('total_transcriptions', 0)} segments")
+        self.stdscr.addstr(y, 30, f"Last: {stats.get('last_activity', 'N/A')}")
         y += 1
         
         # Performance metrics
@@ -487,14 +486,14 @@ def run_monitor(config_path: str = None, watch_paths: List[str] = None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Monitor listnr ASR transcription system',
+        description='Monitor listenr ASR transcription system',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   %(prog)s                           # Monitor default transcript files
   %(prog)s -w ~/my_transcripts.txt  # Monitor specific file
   %(prog)s --json output.json       # Monitor JSON output (if implemented)
-  %(prog)s --config ~/.config/listnr/config.ini  # Use specific config
+  %(prog)s --config ~/.config/listenr/config.ini  # Use specific config
         """
     )
     
@@ -504,7 +503,7 @@ Examples:
                        help='File path to monitor (can be used multiple times)')
     
     parser.add_argument('-c', '--config',
-                       help='Path to listnr config file')
+                       help='Path to listenr config file')
     
     parser.add_argument('--json',
                        help='Monitor JSON output file')

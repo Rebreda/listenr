@@ -1,101 +1,91 @@
-# Local ASR Listener (using Whisper)
+# listnr — Local, privacy-first real-time ASR (Whisper + VAD)
 
-This project provides a command-line ASR (Automatic Speech Recognition) service for Linux. It records audio from your microphone, detects speech segments using VAD, and transcribes them locally using the Whisper model (`faster-whisper`).
+Listenr is a lightweight, privacy-first command-line Automatic Speech Recognition (ASR) service for Linux. It records audio from your microphone, detects speech with Silero VAD, and transcribes speech locally using Whisper-compatible backends (now supporting AMD via whisper-live). The project focuses on local processing, configurable outputs (plain text and JSON), optional LLM post-processing, and optional audio clip storage for dataset building.
 
-**Features:**
+Key features
+- Local transcription (offline) using Whisper-compatible backends (whisper-live for AMD, other backends supported).
+- Real-time VAD-based streaming with Silero to auto-detect speech and pauses.
+- CLI-first: transcripts print to terminal and optionally append to text/JSON files.
+- Optional LLM post-processing (Ollama) for punctuation, capitalization and correction.
+- Optional audio clip saving and a Dataset Manager pipeline (exports in CommonVoice / HuggingFace / CSV formats).
 
-- **Local Transcription:** Uses `faster-whisper` for efficient local ASR (CPU or NVIDIA GPU). No cloud or OpenAI dependencies.
-- **VAD Streaming:** Uses Silero VAD to automatically detect speech and pauses, so you don't need to manually start/stop recording for each phrase.
-- **CLI Only:** No desktop UI, notifications, or hotkeys. All output is printed to the terminal or saved to a file.
-- **Minimal Dependencies:** Only core ASR, VAD, and audio libraries required.
-- **Configurable:** Settings managed via `~/.config/asr-indicator/config.ini`.
-- **Robust Post-Processing:** See `processing_examples.md` for the correction patterns applied to Whisper output (punctuation, capitalization, homophones, and more).
+Quick links
+- Config file: `~/.config/listnr/config.ini`
+- PRD & design notes: `./prd/prd.md` and `./prd/dataset-manager-prd.md`
 
-## Requirements
+Requirements (summary)
+- Python 3.9+ and a virtualenv
+- ffmpeg, libsndfile (for reading/writing audio)
+- sounddevice, soundfile, numpy, torch (see `requirements.txt`)
+- whisper-live server (optional, for AMD GPU support — see notes below)
 
-**1. System Dependencies:**
+Setup (short)
+1. Clone the repository and enter it:
 
-- **Python:** Python 3.9 or higher (with `venv`).
-- **Core Audio:** `ffmpeg`, `libsndfile1`, `pulseaudio-utils` (for audio recording and playback).
-  ```bash
-  sudo apt update
-  sudo apt install ffmpeg libsndfile1 pulseaudio-utils python3-venv
-  ```
-- **Build Tools:** Needed for some Python packages (if wheels aren't available).
-  ```bash
-  sudo apt install build-essential cmake python3-dev
-  ```
+```sh
+git clone https://github.com/<owner>/listenr
+cd listenr
+```
 
-**2. Python Dependencies:**
+2. Create & activate a virtual environment, then install Python dependencies:
 
-- All required Python packages are listed in `requirements.txt`.
-- PyTorch is required for Whisper and VAD. Install the correct version for your hardware (CPU or CUDA) before installing other packages.
+```sh
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-**3. NVIDIA GPU (Optional but Recommended):**
+3. (Optional) If you want AMD support via whisper-live, install and run a whisper-live server and ensure it is reachable at the host/port configured in `config.ini`. The code also supports other Whisper backends if you prefer to use them directly.
 
-- For significantly faster transcription (`device = cuda` in config).
-- Requires:
-  - NVIDIA Drivers installed.
-  - Matching CUDA Toolkit installed system-wide.
-  - cuDNN library installed system-wide.
-  - PyTorch installed with the correct CUDA version (see step 2).
-- Setup can be complex; follow official NVIDIA documentation for your Linux distribution.
+Running
 
-**4. Python Dependencies:**
+Start the service from the repo root:
 
-- Listed in `requirements.txt`.
+```sh
+python asr.py
+```
 
-## Setup Instructions
+Options:
+- `--no-llm` — disable LLM post-processing
+- `-m, --model` — override model name from the config
+- `-d, --device` — override device (cpu|cuda)
+- `-o, --output` — override output file
+- `--list-devices` — list audio input devices
+- `--edit-config` — open config file in $EDITOR
 
-1. **Clone the Repository:**
-   ```bash
-   git clone https://github.com/<owner>/listenr
-   cd listenr
-   ```
+Outputs
+- Plain text log file (configurable in `[Output]`)
+- JSON session file via `output_handler.py` (planned/implemented as per PRD)
+- Optional audio clip storage (`~/.listnr/audio_clips`) for dataset creation
 
-2. **Install System Dependencies:**
-   ```bash
-   sudo apt update
-   sudo apt install ffmpeg libsndfile1 pulseaudio-utils python3-venv build-essential cmake python3-dev
-   ```
+Dataset manager & export
+The project includes design and plans for a Dataset Manager component (see `prd/dataset-manager-prd.md`). When enabled in the config, `asr.py` will append manifest entries (JSONL) describing each saved clip and transcription. The Dataset Manager can then process, score, and export curated datasets in CommonVoice, HuggingFace, or CSV formats.
 
-3. **Create & Activate Python Virtual Environment:**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate.fish   # For fish shell
-   # or
-   source venv/bin/activate        # For bash/zsh
-   ```
+Whisper-live (AMD) notes
+- The repository now includes support for using a local whisper-live transcription server (TranscriptionClient). If you plan to use an AMD GPU or prefer running a model server process, run the whisper-live server and ensure your `config.ini` points to the correct host/port. The PRD and code include an example TranscriptionClient usage.
 
-4. **Install Python Dependencies:**
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+Configuration
+- All runtime settings live in `~/.config/listnr/config.ini` (created automatically on first run). Important sections:
+  - `[Audio]` — sample rate, channels, input device, leading/trailing silence
+  - `[VAD]` — thresholds and chunk sizes
+  - `[Whisper]` — model name, device
+  - `[Storage]` — audio clip storage settings (path, retention, format)
+  - `[Output]` — text/json file paths and output format
+  - `[LLM]` — enable/disable LLM corrections and provider settings
 
-5. **Run the Service (CLI):**
-   ```bash
-   python main.py
-   ```
+Development & extension points
+- `output_handler.py` — JSON session and audio↔text mapping (see PRD)
+- `cleanup_service.py` — retention / cleanup logic for stored clips (see PRD)
+- `dataset-manager` — separate component to process manifests and export datasets
 
-   The service will listen for audio and print transcriptions to the terminal or append them to the configured output file (see config).
-   Stop the service with Ctrl+C.
+Troubleshooting
+- If audio doesn't record, check input device with `python -m sounddevice` or use `--list-devices`.
+- If whisper-live is used, ensure the server is running and reachable.
+- For GPU issues, ensure your drivers and PyTorch/CUDA versions match your hardware.
 
-## Usage
+Contributing
+- See `prd/` for the design and implementation roadmap. Contributions that implement the Dataset Manager, output handler, or cleanup service are welcome.
 
-1. Start the service: `python main.py`
-2. Speak into your microphone. The service will automatically detect speech and transcribe segments.
-3. Transcriptions are printed to the terminal or saved to a file (see `[Output]` section in config).
-4. Stop the service with Ctrl+C.
-
-## Troubleshooting
-
-- **Dependencies:** Make sure all system and Python dependencies are installed in your venv. Use `pip list` to check.
-- **Audio Device:** If no audio is recorded, check the `input_device` setting in `config.ini`. Use `python -m sounddevice` to list available devices.
-- **VAD Tuning:** If transcription cuts off too early or waits too long, adjust `silence_duration_ms` and `speech_threshold` in `config.ini`.
-- **Whisper Model:** Ensure the `model_size` exists and you have enough RAM/VRAM. Check `device` and `compute_type` settings for your hardware.
-
-
-## License
-
-This project is licensed under the **Mozilla Public License Version 2.0**. See the `LICENSE` file for details.
+License
+- Mozilla Public License Version 2.0 — see `LICENSE`.
