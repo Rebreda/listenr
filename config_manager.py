@@ -3,49 +3,50 @@ import os
 import sys
 import logging
 
-APP_NAME = 'listnr'  # Updated app name
+APP_NAME = 'listenr'  # Updated app name
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP_NAME)
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
 
 # Define defaults
 DEFAULT_CONFIG = {
     'Whisper': {
-        'model_size': 'base.en',
+        'model_size': 'medium.en',  # Use a more capable model
         'device': 'cpu',
         'compute_type': 'int8',  # int8 for CPU, float16 for GPU
-        'beam_size': '5',
-        'best_of': '5',
+        'beam_size': '7',  # More beams = better decoding
+        'best_of': '7',
         'temperature': '0.0',
         'condition_on_previous_text': 'true',  # Better context for longer speech
         'vad_filter': 'true',  # Remove silence in Whisper processing
-        'vad_parameters': '{"threshold": 0.6, "min_speech_duration_ms": 250, "max_speech_duration_s": 30}',
+        # Adjust VAD parameters to better align with 30s chunks
+        'vad_parameters': '{"threshold": 0.5, "min_speech_duration_ms": 2000, "max_speech_duration_s": 30}',
     },
     'Audio': {
         'sample_rate': '16000',
         'channels': '1',
         'blocksize': '2048',
         'input_device': 'default',  # 'default' or device number
-        'leading_silence_s': '0.3',  # More context before speech
-        'trailing_silence_s': '0.5',  # More context after speech
+        'leading_silence_s': '0.5',  # Give more pre-context
+        'trailing_silence_s': '0.7',  # More context after speech
         'max_recording_duration_s': '30',  # Maximum length of a single recording
     },
     'Storage': {
         'audio_clips_enabled': 'true',
-        'audio_clips_path': '~/.listnr/audio_clips',
-        'retention_days': '7',
+        'audio_clips_path': '~/.listenr/audio_clips',
+        'retention_days': '90',
         'max_storage_gb': '10',
         'clip_format': 'wav',  # wav, flac, mp3 (mp3 requires external encoder)
         'clip_quality': '16000',  # Target sample rate for saved clips
     },
     'VAD': {
-        'speech_threshold': '0.4',  # Lower = more sensitive (better for continuous speech)
-        'min_speech_duration_s': '0.5',  # Minimum speech to process
-        'max_silence_duration_s': '1.5',  # Wait longer before cutting off (for pauses between sentences)
+        'speech_threshold': '0.35',  # Lower = more sensitive (better for continuous speech)
+        'min_speech_duration_s': '0.4',  # Minimum speech to process
+        'max_silence_duration_s': '1.7',  # Wait longer before cutting off (for pauses between sentences)
         'vad_chunk_size': '512',  # For 16kHz, Silero expects 512
-        'patience_chunks': '10',  # Extra chunks to wait after speech ends
+        'patience_chunks': '12',  # Extra chunks to wait after speech ends
     },
     'LLM': {
-        'enabled': 'true',  # Enable LLM post-processing
+        'enabled': 'false',  # Enable LLM post-processing
         'provider': 'ollama',
         'model': 'gemma3:4b-it-qat',  # Ollama model to use
         'ollama_host': 'http://localhost:11434',  # Ollama API endpoint
@@ -69,6 +70,7 @@ DEFAULT_CONFIG = {
         'file': '',  # Empty means console only
     }
 }
+
 
 # Initialize ConfigParser instance with interpolation disabled
 config = configparser.ConfigParser(
