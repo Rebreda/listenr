@@ -20,3 +20,6 @@ __pycache__/
 
 # Environment variables (if not handled securely elsewhere)
 .env
+
+node_modules
+package*.*

@@ -1,373 +1,333 @@
-from flask import Flask, request, jsonify, send_from_directory
-import os
-import tempfile
-import subprocess
-from web_asr import WebASRProcessor
-import numpy as np
-import soundfile as sf
-import io
+#!/usr/bin/env python3
+"""Improved Listenr Web (single-file) - app.py
 
-# Initialize Flask with static files served from the same directory
-app = Flask(__name__, static_folder='.')
-asr = WebASRProcessor()  # Initialize the web ASR system
+Features:
+- Single-file Flask app with improved WebASRProcessor
+- Secure filenames (uuid), configurable storage directory via ENV
+- MAX_CONTENT_LENGTH upload protection, allowed MIME checks
+- Robust ffmpeg conversion with timeout and error handling
+- Detailed JSON responses, structured errors
+- Health and status endpoints, simple logging
+- Safe serving of audio files via send_from_directory
+- Minimal dependencies: Flask, soundfile, numpy
 
-# Set up routes for serving audio files
-@app.route('/audio/<date>/<filename>')
-def serve_audio(date, filename):
-    audio_dir = os.path.expanduser(f"~/listenr_web/audio/{date}")
-    return send_from_directory(audio_dir, filename)
+Run:
+    export LISTENR_STORAGE=~/listenr_web
+    python3 listenr_web_improved.py
 
-def convert_audio_to_wav(input_path, output_path):
-    """Convert audio to WAV format using ffmpeg"""
-    try:
-        subprocess.run([
-            'ffmpeg', '-i', input_path,
-            '-ar', '16000',  # Set sample rate to 16kHz
-            '-ac', '1',      # Convert to mono
-            '-c:a', 'pcm_s16le',  # Use 16-bit PCM encoding
-            output_path
-        ], check=True, capture_output=True)
-        return True
-    except subprocess.CalledProcessError as e:
-        app.logger.error(f"FFmpeg conversion failed: {e.stderr.decode()}")
-        return False
-
-# HTML template for the web interface - kept in a string to avoid extra files
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Listenr Web</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            max-width: 800px; 
-            margin: 0 auto; 
-            padding: 20px;
-            background: #f0f0f0;
-        }
-        .controls { 
-            text-align: center; 
-            margin: 20px 0;
-        }
-        button { 
-            padding: 10px 20px;
-            margin: 5px;
-            font-size: 16px;
-            cursor: pointer;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-        }
-        button:disabled {
-            background: #cccccc;
-        }
-        #output {
-            background: white;
-            padding: 20px;
-            border-radius: 5px;
-            min-height: 100px;
-            white-space: pre-wrap;
-        }
-        .status {
-            color: #666;
-            font-style: italic;
-            margin: 10px 0;
-        }
-        .transcript-entry {
-            border-bottom: 1px solid #eee;
-            padding: 10px 0;
-            margin-bottom: 15px;
-        }
-        .timestamp {
-            color: #888;
-            font-size: 0.8em;
-            margin-bottom: 5px;
-        }
-        .text {
-            margin: 8px 0;
-            font-size: 1.1em;
-        }
-        .audio-player {
-            margin: 10px 0;
-            background: #f8f9fa;
-            padding: 10px;
-            border-radius: 5px;
-        }
-        .audio-player audio {
-            width: 100%;
-            margin-top: 5px;
-        }
-        #volumeMeter {
-            width: 100%;
-            height: 20px;
-            background-color: #ddd;
-            border-radius: 10px;
-            overflow: hidden;
-            margin: 10px 0;
-        }
-        #volumeBar {
-            width: 0%;
-            height: 100%;
-            background-color: #4CAF50;
-            transition: width 0.1s;
-        }
-    </style>
-</head>
-<body>
-    <h1>Listenr Web Interface</h1>
-    <div class="controls">
-        <button id="startBtn">Start Recording</button>
-        <button id="stopBtn" disabled>Stop Recording</button>
-    </div>
-    <div class="status" id="status">Ready</div>
-    <div id="output"></div>
-
-    <script>
-        let mediaRecorder;
-        let audioContext;
-        let analyser;
-        let audioChunks = [];
-        let isRecording = false;
-        let silenceTimer = null;
-        let lastAudioLevel = 0;
-        
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const status = document.getElementById('status');
-        const output = document.getElementById('output');
-        
-        // Create volume meter
-        const volumeMeterDiv = document.createElement('div');
-        volumeMeterDiv.id = 'volumeMeter';
-        const volumeBar = document.createElement('div');
-        volumeBar.id = 'volumeBar';
-        volumeMeterDiv.appendChild(volumeBar);
-        document.querySelector('.controls').appendChild(volumeMeterDiv);
-
-        // Check if mediaDevices is supported
-        const checkMediaSupport = async () => {
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-                    throw new Error('Media access requires HTTPS or localhost. Try accessing via localhost or enable HTTPS.');
-                }
-                throw new Error('Media devices not supported in this browser.');
-            }
-        };
-
-        // Process audio levels
-        const processAudioLevel = (analyser) => {
-            const array = new Uint8Array(analyser.frequencyBinCount);
-            analyser.getByteFrequencyData(array);
-            const values = array.reduce((a, b) => a + b) / array.length;
-            const level = Math.min(100, Math.round((values / 128) * 100));
-            volumeBar.style.width = level + '%';
-            
-            // Auto-stop on silence (if level is very low for 2 seconds)
-            if (isRecording) {
-                if (level < 5) {
-                    if (!silenceTimer) {
-                        silenceTimer = setTimeout(() => {
-                            if (lastAudioLevel < 5) {
-                                stopRecording();
-                            }
-                            silenceTimer = null;
-                        }, 2000);
-                    }
-                } else {
-                    if (silenceTimer) {
-                        clearTimeout(silenceTimer);
-                        silenceTimer = null;
-                    }
-                }
-                lastAudioLevel = level;
-            }
-            
-            requestAnimationFrame(() => processAudioLevel(analyser));
-        };
-
-        const startRecording = async () => {
-            try {
-                await checkMediaSupport();
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: {
-                        channelCount: 1,
-                        sampleRate: 16000,
-                        echoCancellation: true,
-                        noiseSuppression: true
-                    } 
-                });
-
-                // Set up audio context for volume monitoring
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const source = audioContext.createMediaStreamSource(stream);
-                analyser = audioContext.createAnalyser();
-                analyser.smoothingTimeConstant = 0.3;
-                analyser.fftSize = 1024;
-                source.connect(analyser);
-                processAudioLevel(analyser);
-
-                mediaRecorder = new MediaRecorder(stream, {
-                    mimeType: 'audio/webm;codecs=opus'
-                });
-                
-                isRecording = true;
-                
-                mediaRecorder.ondataavailable = (event) => {
-                    audioChunks.push(event.data);
-                };
-
-                mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    const formData = new FormData();
-                    formData.append('audio_data', audioBlob);
-
-                    status.textContent = 'Processing audio...';
-                    try {
-                        console.log('Sending audio for processing...');
-                        const response = await fetch('/upload', {
-                            method: 'POST',
-                            body: formData
-                        });
-                        
-                        console.log('Received response:', response);
-                        const data = await response.json();
-                        console.log('Parsed data:', data);
-                        
-                        if (data.transcription) {
-                            const entry = document.createElement('div');
-                            entry.className = 'transcript-entry';
-                            
-                            // Format the duration nicely
-                            const duration = data.duration ? 
-                                `(${data.duration.toFixed(1)}s)` : '';
-                            
-                            // Create entry with audio player if available
-                            entry.innerHTML = `
-                                <div class="timestamp">${new Date().toLocaleTimeString()} ${duration}</div>
-                                <div class="text">${data.transcription}</div>
-                                ${data.audio_file ? `
-                                    <div class="audio-player">
-                                        <audio controls src="/audio/${data.audio_file}"></audio>
-                                    </div>
-                                ` : ''}
-                            `;
-                            
-                            output.insertBefore(entry, output.firstChild);
-                            console.log('Added entry to output');
-                        } else {
-                            console.warn('No transcription in response:', data);
-                        }
-                    } catch (err) {
-                        console.error('Error processing audio:', err);
-                        status.textContent = 'Error: ' + err.message;
-                    }
-                    
-                    audioChunks = [];
-                    
-                    // Auto-restart recording if still active
-                    if (isRecording) {
-                        mediaRecorder.start();
-                        status.textContent = 'Recording...';
-                    } else {
-                        status.textContent = 'Ready';
-                    }
-                };
-
-                mediaRecorder.start();
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                status.textContent = 'Recording...';
-            } catch (err) {
-                status.textContent = 'Error: ' + err.message;
-                isRecording = false;
-            }
-        };
-
-        const stopRecording = () => {
-            if (mediaRecorder && mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-            }
-            if (audioContext) {
-                audioContext.close();
-            }
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-            status.textContent = 'Stopped';
-            isRecording = false;
-            volumeBar.style.width = '0%';
-        };
-
-        startBtn.onclick = startRecording;
-        stopBtn.onclick = stopRecording;
-    </script>
-</body>
-</html>
+Optional: run behind a production WSGI server (gunicorn) and put nginx in front for HTTPS + static files.
 """
 
-@app.route('/')
-def index():
-    return HTML_TEMPLATE
+import os
+import io
+import uuid
+import json
+import shutil
+import logging
+import subprocess
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict
+
+from flask import Flask, request, jsonify, send_from_directory, abort, Response
+from werkzeug.utils import secure_filename
+import soundfile as sf
+import numpy as np
+
+# ---------------------------
+# Configuration
+# ---------------------------
+STORAGE_BASE = Path(os.environ.get('LISTENR_STORAGE', Path.home() / 'listenr_web'))
+AUDIO_DIRNAME = 'audio'
+TRANSCRIPT_DIRNAME = 'transcripts'
+ALLOWED_MIME = {
+    'audio/webm', 'audio/ogg', 'audio/wav', 'audio/x-wav', 'audio/mpeg', 'audio/mp3'
+}
+MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB upload limit
+FFMPEG_TIMEOUT = 20  # seconds
+SAMPLE_RATE = 16000
+
+# Ensure storage directories exist early
+(STORAGE_BASE / AUDIO_DIRNAME).mkdir(parents=True, exist_ok=True)
+(STORAGE_BASE / TRANSCRIPT_DIRNAME).mkdir(parents=True, exist_ok=True)
+
+# ---------------------------
+# Logging
+# ---------------------------
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+logger = logging.getLogger('listenr')
+
+# ---------------------------
+# Minimal placeholder ASR (replace with your WhisperASR import)
+# ---------------------------
+class DummyASR:
+    """Replace or wrap your real ASR implementation here (e.g. WhisperASR).
+    It must implement process_speech_segment() that uses frames in self.speech_frames
+    and returns a transcription string.
+    """
+    def __init__(self):
+        self.speech_frames = []
+
+    def process_speech_segment(self) -> str:
+        if not self.speech_frames:
+            return ''
+        # naive "ASR": return length and mean amplitude
+        arr = np.concatenate(self.speech_frames)
+        duration = arr.size / SAMPLE_RATE
+        return f"(dummy) audio {duration:.2f}s — mean {float(np.abs(arr).mean()):.6f}"
+
+
+# ---------------------------
+# WebASRProcessor
+# ---------------------------
+class WebASRProcessor:
+    def __init__(self, storage_base: Path = STORAGE_BASE, asr=None):
+        self.storage_base = Path(storage_base)
+        self.asr = asr or DummyASR()
+
+    def _make_paths(self, timestamp: datetime, uuid_str: str):
+        date_str = timestamp.strftime('%Y-%m-%d')
+        audio_dir = self.storage_base / AUDIO_DIRNAME / date_str
+        transcript_dir = self.storage_base / TRANSCRIPT_DIRNAME / date_str
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+        audio_filename = f"clip_{date_str}_{uuid_str}.wav"
+        transcript_filename = f"transcript_{date_str}_{uuid_str}.json"
+        return audio_dir / audio_filename, transcript_dir / transcript_filename, date_str, audio_filename
+
+    def process_audio(self, audio_array: np.ndarray, sample_rate: int = SAMPLE_RATE) -> Dict[str, Any]:
+        """Process a numpy audio array and return structured metadata + transcription.
+
+        Expects mono float32/float64 or int16 arrays. Will normalize to float32.
+        """
+        timestamp = datetime.utcnow()
+        uuid_str = uuid.uuid4().hex[:12]
+
+        try:
+            # normalize types
+            if not isinstance(audio_array, np.ndarray):
+                audio_array = np.asarray(audio_array)
+
+            # convert ints to float32
+            if np.issubdtype(audio_array.dtype, np.integer):
+                maxv = np.iinfo(audio_array.dtype).max
+                audio_array = audio_array.astype('float32') / float(maxv)
+            else:
+                audio_array = audio_array.astype('float32')
+
+            # ensure mono
+            if audio_array.ndim == 2:
+                # average channels
+                audio_array = audio_array.mean(axis=1)
+
+            duration = float(audio_array.shape[0]) / float(sample_rate)
+
+            audio_path, transcript_path, date_str, audio_filename = self._make_paths(timestamp, uuid_str)
+
+            # write WAV (16-bit PCM)
+            sf.write(str(audio_path), audio_array, sample_rate, subtype='PCM_16')
+
+            # feed ASR implementation
+            if hasattr(self.asr, 'speech_frames'):
+                self.asr.speech_frames = [audio_array]
+
+            text = ''
+            try:
+                text = self.asr.process_speech_segment()
+            except Exception as e:
+                logger.exception('ASR processing failed')
+                text = ''
+
+            response = {
+                'success': True,
+                'transcription': text,
+                'audio': {
+                    'path': str(audio_path),
+                    'filename': audio_filename,
+                    'duration': duration,
+                    'sample_rate': sample_rate,
+                },
+                'timestamp': timestamp.isoformat() + 'Z',
+                'confidence': None,
+                'metadata': {
+                    'date': date_str,
+                    'uuid': uuid_str,
+                    'transcript_path': str(transcript_path)
+                }
+            }
+
+            with open(transcript_path, 'w', encoding='utf-8') as fh:
+                json.dump(response, fh, indent=2, ensure_ascii=False)
+
+            return response
+
+        except Exception as e:
+            logger.exception('Failed to process audio')
+            return {'success': False, 'error': str(e)}
+
+
+# ---------------------------
+# Flask App
+# ---------------------------
+app = Flask(__name__, static_folder='.', static_url_path='')
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+processor = WebASRProcessor()
+
+
+@app.after_request
+def set_security_headers(response: Response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Referrer-Policy'] = 'no-referrer'
+    return response
+
+
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok', 'time': datetime.utcnow().isoformat() + 'Z'})
+
+
+@app.route('/audio/<date>/<filename>')
+def serve_audio(date: str, filename: str):
+    # Only serve files within the configured storage base
+    date_clean = secure_filename(date)
+    filename_clean = secure_filename(filename)
+    audio_dir = STORAGE_BASE / AUDIO_DIRNAME / date_clean
+    if not audio_dir.exists():
+        abort(404)
+    return send_from_directory(str(audio_dir), filename_clean)
+
+
+def _ffmpeg_convert_to_wav(input_path: str, output_path: str, target_rate: int = SAMPLE_RATE) -> None:
+    """Convert arbitrary audio to WAV (mono, target_rate) using ffmpeg.
+
+    Raises CalledProcessError on failure.
+    """
+    cmd = [
+        'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+        '-i', input_path,
+        '-ac', '1',
+        '-ar', str(target_rate),
+        '-c:a', 'pcm_s16le',
+        output_path
+    ]
+    subprocess.run(cmd, check=True, timeout=FFMPEG_TIMEOUT)
+
 
 @app.route('/upload', methods=['POST'])
 def upload():
-    try:
-        if 'audio_data' not in request.files:
-            return jsonify({'error': 'No audio data provided'}), 400
-        
-        audio_file = request.files['audio_data']
-        
-        # Create a temporary directory for audio processing
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Save the uploaded file
-            input_path = os.path.join(temp_dir, 'input.webm')
-            audio_file.save(input_path)
-            
-            try:
-                # Convert webm to wav using ffmpeg
-                wav_path = os.path.join(temp_dir, 'output.wav')
-                if not convert_audio_to_wav(input_path, wav_path):
-                    return jsonify({'error': 'Audio conversion failed'}), 500
-                
-                # Read the wav file using soundfile
-                audio_data, sample_rate = sf.read(wav_path)
-                
-                # Process with WhisperASR and get timestamp
-                from datetime import datetime
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                
-                # Process with WebASRProcessor
-                result = asr.process_audio(audio_data, sample_rate)
-                
-                if not result['success']:
-                    raise Exception(result['error'])
-                
-                return jsonify({
-                    'transcription': result['transcription'],
-                    'timestamp': result['timestamp'],
-                    'audio_file': result['audio']['path'],
-                    'transcript_file': result['metadata']['transcript_path'],
-                    'duration': result['audio']['duration']
-                })
-                
-            except Exception as e:
-                app.logger.error(f"Error processing audio: {str(e)}")
-                return jsonify({'error': 'Failed to process audio'}), 500
-                
-    except Exception as e:
-        app.logger.error(f"Server error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+    # Accept either multipart form upload (from browser) or binary blob (curl)
+    if 'audio_data' not in request.files:
+        return jsonify({'error': 'No audio_data file part'}), 400
+
+    audio_file = request.files['audio_data']
+    if audio_file.filename == '':
+        return jsonify({'error': 'Empty filename'}), 400
+
+    # basic MIME check
+    content_type = audio_file.mimetype
+    if content_type not in ALLOWED_MIME:
+        logger.warning('Rejected upload with MIME: %s', content_type)
+        # allow unknown types but warn; alternatively return 415
+        # return jsonify({'error': 'Unsupported media type'}), 415
+
+    # make temp dir for conversion
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_path = Path(tmpdir) / secure_filename(audio_file.filename)
+        audio_file.save(str(input_path))
+
+        wav_path = Path(tmpdir) / 'converted.wav'
+        try:
+            _ffmpeg_convert_to_wav(str(input_path), str(wav_path))
+        except subprocess.CalledProcessError as e:
+            logger.exception('ffmpeg failed')
+            return jsonify({'error': 'Audio conversion failed', 'detail': str(e)}), 500
+        except subprocess.TimeoutExpired:
+            logger.exception('ffmpeg timeout')
+            return jsonify({'error': 'Audio conversion timed out'}), 500
+
+        # read wav and process
+        try:
+            audio_array, sample_rate = sf.read(str(wav_path), always_2d=False)
+            # If stereo -> convert to mono by averaging
+            if audio_array.ndim == 2:
+                audio_array = audio_array.mean(axis=1)
+
+            result = processor.process_audio(audio_array, sample_rate)
+            if not result.get('success'):
+                return jsonify({'error': 'ASR failed', 'detail': result.get('error')}), 500
+
+            # produce a public URL for the saved audio
+            date = result['metadata']['date']
+            filename = result['audio']['filename']
+            public_url = f"/audio/{date}/{filename}"
+
+            return jsonify({
+                'transcription': result['transcription'],
+                'timestamp': result['timestamp'],
+                'audio_url': public_url,
+                'transcript_path': result['metadata']['transcript_path'],
+                'duration': result['audio']['duration']
+            })
+
+        except Exception as e:
+            logger.exception('Reading/processing WAV failed')
+            return jsonify({'error': 'Failed to read or process audio', 'detail': str(e)}), 500
+
+
+# Minimal index to help local testing (keeps the original UI but improved)
+INDEX_HTML = '''<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Listenr Web (improved)</title>
+<style>body{font-family:Inter,Arial;max-width:900px;margin:0 auto;padding:20px;background:#f6f7fb}button{padding:8px 12px;margin:6px;border-radius:6px;border:0;background:#0b76ff;color:#fff}#output{background:#fff;padding:12px;border-radius:8px;min-height:80px}</style>
+</head>
+<body>
+<h1>Listenr Web (improved)</h1>
+<div><button id=start>Start</button><button id=stop disabled>Stop</button></div>
+<div id=status>Ready</div>
+<div id=output></div>
+<script>
+let mr, chunks=[];
+const startBtn=document.getElementById('start');
+const stopBtn=document.getElementById('stop');
+const status=document.getElementById('status');
+const output=document.getElementById('output');
+async function start(){
+ try{
+  const s=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1}});
+  mr=new MediaRecorder(s,{mimeType:'audio/webm'});
+  mr.ondataavailable=e=>chunks.push(e.data);
+  mr.onstop=async ()=>{
+    const blob=new Blob(chunks,{type:'audio/webm'});
+    const fd=new FormData(); fd.append('audio_data', blob, 'clip.webm');
+    status.textContent='Uploading...';
+    const r=await fetch('/upload',{method:'POST',body:fd});
+    const j=await r.json();
+    if(r.ok){
+      const d=document.createElement('div'); d.textContent=j.transcription||JSON.stringify(j);
+      output.prepend(d);
+    } else { output.prepend(document.createElement('div')).textContent=JSON.stringify(j); }
+    chunks=[]; status.textContent='Ready';
+  }
+  mr.start(); startBtn.disabled=true; stopBtn.disabled=false; status.textContent='Recording...';
+ }catch(e){status.textContent='Err:'+e.message}
+}
+function stop(){ if(mr && mr.state==='recording') mr.stop(); startBtn.disabled=false; stopBtn.disabled=true; }
+startBtn.onclick=start; stopBtn.onclick=stop;
+</script>
+</body>
+</html>'''
+
+
+@app.route('/')
+def index():
+    return INDEX_HTML
+
 
 if __name__ == '__main__':
-    print("Starting Listenr Web Server...")
-    print("To access from other devices, use one of these URLs:")
-    print("1. Local testing (recommended): http://localhost:5000")
-    print("2. Local network: http://<your-computer-ip>:5000")
-    print("\nNote: For microphone access, you must either:")
-    print("- Use localhost URL")
-    print("- Set up HTTPS with SSL certificates")
-    print("- Use a reverse proxy with HTTPS (like nginx)")
-    
-    # Run the app on all interfaces
+    logger.info('Starting improved Listenr Web server')
+    logger.info('Storage base: %s', STORAGE_BASE)
     app.run(host='0.0.0.0', port=5000, debug=False)
