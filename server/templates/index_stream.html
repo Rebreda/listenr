@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Listenr - Live Transcription</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .mic-button {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .mic-button:hover {
+            transform: scale(1.05);
+        }
+
+        .mic-button:active {
+            transform: scale(0.95);
+        }
+
+        .mic-button.active {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .mic-button.listening {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        .mic-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            }
+            50% {
+                box-shadow: 0 4px 30px rgba(102, 126, 234, 0.8);
+            }
+        }
+
+        .mic-icon {
+            font-size: 2rem;
+        }
+
+        .status {
+            text-align: center;
+            font-size: 1rem;
+            color: #666;
+            min-height: 24px;
+            font-weight: 500;
+        }
+
+        .status.active {
+            color: #38ef7d;
+        }
+
+        .status.listening {
+            color: #f5576c;
+        }
+
+        .status.error {
+            color: #e74c3c;
+        }
+
+        .live-section {
+            margin-bottom: 20px;
+        }
+
+        .live-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #f5576c;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            animation: blink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .live-text {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 80px;
+            font-size: 1.2rem;
+            line-height: 1.6;
+            color: #333;
+            border-left: 4px solid #f5576c;
+        }
+
+        .live-text.empty {
+            color: #999;
+            font-style: italic;
+        }
+
+        .transcripts {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .transcript-item {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid #667eea;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .transcript-time {
+            font-size: 0.85rem;
+            color: #999;
+            margin-bottom: 8px;
+        }
+
+        .transcript-text {
+            font-size: 1.1rem;
+            line-height: 1.6;
+            color: #333;
+            word-wrap: break-word;
+        }
+
+        .transcript-text.corrected {
+            border-top: 1px dashed #ddd;
+            margin-top: 10px;
+            padding-top: 10px;
+        }
+
+        .transcript-text.corrected::before {
+            content: "✨ ";
+            font-size: 0.85rem;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .transcript-meta {
+            margin-top: 10px;
+            font-size: 0.85rem;
+            color: #999;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        footer {
+            margin-top: 30px;
+            text-align: center;
+            color: white;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .mic-button {
+                width: 100px;
+                height: 100px;
+            }
+
+            .mic-icon {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎤 Listenr Live</h1>
+            <p class="subtitle">Continuous voice transcription</p>
+        </header>
+
+        <div class="card">
+            <div class="controls">
+                <button id="micBtn" class="mic-button">
+                    <span class="mic-icon">🎤</span>
+                    <span id="buttonText">Start</span>
+                </button>
+                <div id="status" class="status">Ready to listen</div>
+            </div>
+
+            <div class="live-section" id="liveSection" style="display: none;">
+                <div class="live-badge">
+                    <span class="live-dot"></span>
+                    LIVE
+                </div>
+                <div id="liveText" class="live-text empty">
+                    Listening... speak naturally
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-bottom: 20px; color: #667eea;">Transcripts</h2>
+            <div id="transcripts" class="transcripts">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📝</div>
+                    <p>Your transcripts will appear here</p>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Powered by Whisper ASR • Live Streaming Mode</p>
+        </footer>
+    </div>
+
+    <script>
+        // Configuration
+        const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/transcribe`;
+        const TARGET_SAMPLE_RATE = 16000;
+        const CHUNK_SIZE = 4096; // Send chunks of this size
+
+        // State
+        let ws = null;
+        let audioContext = null;
+        let mediaStream = null;
+        let audioWorkletNode = null;
+        let isActive = false;
+        let actualSampleRate = 0;
+
+        // DOM elements
+        const micBtn = document.getElementById('micBtn');
+        const buttonText = document.getElementById('buttonText');
+        const status = document.getElementById('status');
+        const liveSection = document.getElementById('liveSection');
+        const liveText = document.getElementById('liveText');
+        const transcriptsContainer = document.getElementById('transcripts');
+
+        // Initialize
+        micBtn.addEventListener('click', toggleMicrophone);
+
+        async function toggleMicrophone() {
+            if (!isActive) {
+                await startListening();
+            } else {
+                stopListening();
+            }
+        }
+
+        async function startListening() {
+            try {
+                // Connect WebSocket first
+                ws = new WebSocket(WS_URL);
+
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    updateStatus('Connected, initializing audio...', 'active');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        handleWebSocketMessage(JSON.parse(event.data));
+                    } catch (e) {
+                        console.error('Error handling message:', e);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Connection error', 'error');
+                    stopListening();
+                };
+
+                ws.onclose = (event) => {
+                    console.log('WebSocket closed', event.code, event.reason);
+                    if (isActive) {
+                        updateStatus('Connection closed', 'error');
+                        stopListening();
+                    }
+                };
+
+                // Wait for WebSocket to connect
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('WebSocket connection timeout'));
+                    }, 5000);
+
+                    const checkConnection = () => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            clearTimeout(timeout);
+                            resolve();
+                        } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+                            clearTimeout(timeout);
+                            reject(new Error('WebSocket connection failed'));
+                        } else {
+                            setTimeout(checkConnection, 100);
+                        }
+                    };
+                    checkConnection();
+                });
+
+                // Request microphone access
+                console.log('Requesting microphone access...');
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+
+                // Create audio context with no sample rate constraint (use browser default)
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                actualSampleRate = audioContext.sampleRate;
+
+                console.log('Audio context created, sample rate:', actualSampleRate);
+
+                // Create audio processing pipeline
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                const processor = audioContext.createScriptProcessor(CHUNK_SIZE, 1, 1);
+
+                processor.onaudioprocess = (e) => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        const inputData = e.inputBuffer.getChannelData(0);
+
+                        // Resample if needed
+                        let audioToSend = inputData;
+                        if (actualSampleRate !== TARGET_SAMPLE_RATE) {
+                            audioToSend = resampleAudio(inputData, actualSampleRate, TARGET_SAMPLE_RATE);
+                        }
+
+                        sendAudioData(audioToSend);
+                    }
+                };
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                // Store for cleanup
+                audioWorkletNode = processor;
+
+                // Update UI
+                isActive = true;
+                micBtn.classList.add('active');
+                buttonText.textContent = 'Stop';
+                liveSection.style.display = 'block';
+                updateStatus('Listening...', 'active');
+
+                console.log('Audio pipeline established');
+
+            } catch (error) {
+                console.error('Error starting microphone:', error);
+                updateStatus(`Error: ${error.message}`, 'error');
+                stopListening();
+            }
+        }
+
+        function stopListening() {
+            // Close WebSocket
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+
+            // Stop audio
+            if (audioWorkletNode) {
+                audioWorkletNode.disconnect();
+                audioWorkletNode = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            // Update UI
+            isActive = false;
+            micBtn.classList.remove('active', 'listening');
+            buttonText.textContent = 'Start';
+            liveSection.style.display = 'none';
+            updateStatus('Ready to listen', '');
+        }
+
+        function resampleAudio(audioData, fromRate, toRate) {
+            // Simple linear resampling
+            const ratio = fromRate / toRate;
+            const newLength = Math.round(audioData.length / ratio);
+            const result = new Float32Array(newLength);
+
+            for (let i = 0; i < newLength; i++) {
+                const srcIndex = i * ratio;
+                const srcIndexFloor = Math.floor(srcIndex);
+                const srcIndexCeil = Math.min(srcIndexFloor + 1, audioData.length - 1);
+                const t = srcIndex - srcIndexFloor;
+
+                // Linear interpolation
+                result[i] = audioData[srcIndexFloor] * (1 - t) + audioData[srcIndexCeil] * t;
+            }
+
+            return result;
+        }
+
+        function sendAudioData(audioData) {
+            // Convert Float32Array to base64
+            const buffer = new ArrayBuffer(audioData.length * 4);
+            const view = new Float32Array(buffer);
+            view.set(audioData);
+
+            const bytes = new Uint8Array(buffer);
+            const base64 = btoa(String.fromCharCode.apply(null, bytes));
+
+            // Send to server
+            ws.send(JSON.stringify({
+                type: 'audio',
+                audio: base64,
+                sample_rate: TARGET_SAMPLE_RATE,
+                format: 'float32'
+            }));
+        }
+
+        function handleWebSocketMessage(message) {
+            console.log('Received:', message);
+
+            if (message.type === 'status') {
+                if (message.message === 'connected') {
+                    console.log('Server connected, LLM:', message.llm_enabled);
+                }
+            } else if (message.type === 'transcription') {
+                addTranscript(message.data);
+                // Flash the mic button
+                micBtn.classList.add('listening');
+                setTimeout(() => micBtn.classList.remove('listening'), 500);
+            } else if (message.type === 'error') {
+                console.error('Server error:', message.message);
+                updateStatus(`Error: ${message.message}`, 'error');
+            }
+        }
+
+        function addTranscript(result) {
+            // Remove empty state
+            const emptyState = transcriptsContainer.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            // Create transcript element
+            const item = document.createElement('div');
+            item.className = 'transcript-item';
+
+            const time = new Date(result.timestamp).toLocaleString();
+            const duration = result.audio.duration.toFixed(2);
+            const hasLLM = result.metadata && result.metadata.llm_applied;
+
+            let html = `
+                <div class="transcript-time">${time}</div>
+                <div class="transcript-text">${result.transcription || '(no speech detected)'}</div>
+            `;
+
+            if (hasLLM && result.corrected_text !== result.transcription) {
+                html += `<div class="transcript-text corrected">${result.corrected_text}</div>`;
+            }
+
+            html += `
+                <div class="transcript-meta">
+                    <span>⏱️ ${duration}s</span>
+                    ${hasLLM ? '<span>✨ LLM</span>' : ''}
+                    ${result.audio.url ? `<a href="${result.audio.url}" target="_blank">🔊 Audio</a>` : ''}
+                </div>
+            `;
+
+            item.innerHTML = html;
+
+            // Add to top
+            transcriptsContainer.insertBefore(item, transcriptsContainer.firstChild);
+
+            // Update live text briefly
+            liveText.textContent = result.corrected_text || result.transcription;
+            liveText.classList.remove('empty');
+            setTimeout(() => {
+                liveText.textContent = 'Listening... speak naturally';
+                liveText.classList.add('empty');
+            }, 2000);
+        }
+
+        function updateStatus(text, className) {
+            status.textContent = text;
+            status.className = 'status ' + className;
+        }
+
+        // Check for browser support
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            updateStatus('Error: Browser does not support audio recording', 'error');
+            micBtn.disabled = true;
+        }
+
+        if (!window.WebSocket) {
+            updateStatus('Error: Browser does not support WebSockets', 'error');
+            micBtn.disabled = true;
+        }
+    </script>
+</body>
+</html>

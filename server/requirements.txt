@@ -1,6 +1,9 @@
 # Flask web framework
 Flask>=3.0.0
 
+# WebSocket support for live streaming
+flask-sock>=0.7.0
+
 # Audio processing
 soundfile>=0.12.1
 numpy>=1.24.0
