@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Listenr - Voice Transcription</title>
+    <title>Listenr - Live Transcription</title>
     <style>
         * {
             margin: 0;
@@ -61,7 +61,7 @@
             margin-bottom: 30px;
         }
 
-        .record-button {
+        .mic-button {
             width: 120px;
             height: 120px;
             border-radius: 50%;
@@ -80,31 +80,35 @@
             gap: 8px;
         }
 
-        .record-button:hover {
+        .mic-button:hover {
             transform: scale(1.05);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
         }
 
-        .record-button:active {
+        .mic-button:active {
             transform: scale(0.95);
         }
 
-        .record-button.recording {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            animation: pulse 1.5s ease-in-out infinite;
+        .mic-button.active {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            animation: pulse 2s ease-in-out infinite;
         }
 
-        .record-button.processing {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        .mic-button.listening {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        .mic-button:disabled {
+            background: #ccc;
             cursor: not-allowed;
         }
 
         @keyframes pulse {
             0%, 100% {
-                box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
             }
             50% {
-                box-shadow: 0 4px 25px rgba(245, 87, 108, 0.8);
+                box-shadow: 0 4px 30px rgba(102, 126, 234, 0.8);
             }
         }
 
@@ -120,12 +124,62 @@
             font-weight: 500;
         }
 
-        .status.recording {
+        .status.active {
+            color: #38ef7d;
+        }
+
+        .status.listening {
             color: #f5576c;
         }
 
-        .status.processing {
-            color: #4facfe;
+        .status.error {
+            color: #e74c3c;
+        }
+
+        .live-section {
+            margin-bottom: 20px;
+        }
+
+        .live-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #f5576c;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            animation: blink 1.5s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .live-text {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            min-height: 80px;
+            font-size: 1.2rem;
+            line-height: 1.6;
+            color: #333;
+            border-left: 4px solid #f5576c;
+        }
+
+        .live-text.empty {
+            color: #999;
+            font-style: italic;
         }
 
         .transcripts {
@@ -173,7 +227,7 @@
         }
 
         .transcript-text.corrected::before {
-            content: "✨ Corrected: ";
+            content: "✨ ";
             font-size: 0.85rem;
             color: #667eea;
             font-weight: 600;
@@ -186,15 +240,6 @@
             display: flex;
             gap: 15px;
             flex-wrap: wrap;
-        }
-
-        .error {
-            background: #fee;
-            border-left-color: #f44;
-        }
-
-        .error .transcript-text {
-            color: #c33;
         }
 
         .empty-state {
@@ -217,23 +262,6 @@
             font-size: 0.9rem;
         }
 
-        /* Loading animation */
-        .loading-dots {
-            display: inline-block;
-        }
-
-        .loading-dots::after {
-            content: '...';
-            animation: dots 1.5s steps(4, end) infinite;
-        }
-
-        @keyframes dots {
-            0%, 20% { content: '.'; }
-            40% { content: '..'; }
-            60%, 100% { content: '...'; }
-        }
-
-        /* Mobile optimizations */
         @media (max-width: 480px) {
             h1 {
                 font-size: 2rem;
@@ -243,7 +271,7 @@
                 padding: 20px;
             }
 
-            .record-button {
+            .mic-button {
                 width: 100px;
                 height: 100px;
             }
@@ -257,17 +285,27 @@
 <body>
     <div class="container">
         <header>
-            <h1>🎤 Listenr</h1>
-            <p class="subtitle">Real-time voice transcription</p>
+            <h1>🎤 Listenr Live</h1>
+            <p class="subtitle">Continuous voice transcription</p>
         </header>
 
         <div class="card">
             <div class="controls">
-                <button id="recordBtn" class="record-button">
+                <button id="micBtn" class="mic-button">
                     <span class="mic-icon">🎤</span>
                     <span id="buttonText">Start</span>
                 </button>
-                <div id="status" class="status">Ready to record</div>
+                <div id="status" class="status">Ready to listen</div>
+            </div>
+
+            <div class="live-section" id="liveSection" style="display: none;">
+                <div class="live-badge">
+                    <span class="live-dot"></span>
+                    LIVE
+                </div>
+                <div id="liveText" class="live-text empty">
+                    Listening... speak naturally
+                </div>
             </div>
         </div>
 
@@ -282,139 +320,240 @@
         </div>
 
         <footer>
-            <p>Powered by Whisper ASR</p>
+            <p>Powered by Whisper ASR • Live Streaming Mode</p>
         </footer>
     </div>
 
     <script>
-        // State management
-        let mediaRecorder = null;
-        let audioChunks = [];
-        let isRecording = false;
-        let isProcessing = false;
+        // Configuration
+        const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/transcribe`;
+        const TARGET_SAMPLE_RATE = 16000;
+        const CHUNK_SIZE = 4096; // Send chunks of this size
+
+        // State
+        let ws = null;
+        let audioContext = null;
+        let mediaStream = null;
+        let audioWorkletNode = null;
+        let isActive = false;
+        let actualSampleRate = 0;
 
         // DOM elements
-        const recordBtn = document.getElementById('recordBtn');
+        const micBtn = document.getElementById('micBtn');
         const buttonText = document.getElementById('buttonText');
         const status = document.getElementById('status');
+        const liveSection = document.getElementById('liveSection');
+        const liveText = document.getElementById('liveText');
         const transcriptsContainer = document.getElementById('transcripts');
 
         // Initialize
-        recordBtn.addEventListener('click', toggleRecording);
+        micBtn.addEventListener('click', toggleMicrophone);
 
-        async function toggleRecording() {
-            if (isProcessing) return;
-
-            if (!isRecording) {
-                await startRecording();
+        async function toggleMicrophone() {
+            if (!isActive) {
+                await startListening();
             } else {
-                stopRecording();
+                stopListening();
             }
         }
 
-        async function startRecording() {
+        async function startListening() {
             try {
+                // Connect WebSocket first
+                ws = new WebSocket(WS_URL);
+
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                    updateStatus('Connected, initializing audio...', 'active');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        handleWebSocketMessage(JSON.parse(event.data));
+                    } catch (e) {
+                        console.error('Error handling message:', e);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Connection error', 'error');
+                    stopListening();
+                };
+
+                ws.onclose = (event) => {
+                    console.log('WebSocket closed', event.code, event.reason);
+                    if (isActive) {
+                        updateStatus('Connection closed', 'error');
+                        stopListening();
+                    }
+                };
+
+                // Wait for WebSocket to connect
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('WebSocket connection timeout'));
+                    }, 5000);
+
+                    const checkConnection = () => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            clearTimeout(timeout);
+                            resolve();
+                        } else if (ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+                            clearTimeout(timeout);
+                            reject(new Error('WebSocket connection failed'));
+                        } else {
+                            setTimeout(checkConnection, 100);
+                        }
+                    };
+                    checkConnection();
+                });
+
                 // Request microphone access
-                const stream = await navigator.mediaDevices.getUserMedia({
+                console.log('Requesting microphone access...');
+                mediaStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         channelCount: 1,
-                        sampleRate: 16000,
                         echoCancellation: true,
-                        noiseSuppression: true
+                        noiseSuppression: true,
+                        autoGainControl: true
                     }
                 });
 
-                // Determine best audio format
-                const mimeType = getSupportedMimeType();
-                mediaRecorder = new MediaRecorder(stream, { mimeType });
+                // Create audio context with no sample rate constraint (use browser default)
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                actualSampleRate = audioContext.sampleRate;
 
-                audioChunks = [];
+                console.log('Audio context created, sample rate:', actualSampleRate);
 
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunks.push(event.data);
+                // Create audio processing pipeline
+                const source = audioContext.createMediaStreamSource(mediaStream);
+                const processor = audioContext.createScriptProcessor(CHUNK_SIZE, 1, 1);
+
+                processor.onaudioprocess = (e) => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        const inputData = e.inputBuffer.getChannelData(0);
+
+                        // Resample if needed
+                        let audioToSend = inputData;
+                        if (actualSampleRate !== TARGET_SAMPLE_RATE) {
+                            audioToSend = resampleAudio(inputData, actualSampleRate, TARGET_SAMPLE_RATE);
+                        }
+
+                        sendAudioData(audioToSend);
                     }
                 };
 
-                mediaRecorder.onstop = async () => {
-                    // Stop all tracks
-                    stream.getTracks().forEach(track => track.stop());
-                    await processAudio();
-                };
+                source.connect(processor);
+                processor.connect(audioContext.destination);
 
-                mediaRecorder.start();
-                isRecording = true;
+                // Store for cleanup
+                audioWorkletNode = processor;
 
                 // Update UI
-                recordBtn.classList.add('recording');
+                isActive = true;
+                micBtn.classList.add('active');
                 buttonText.textContent = 'Stop';
-                status.textContent = 'Recording...';
-                status.classList.add('recording');
+                liveSection.style.display = 'block';
+                updateStatus('Listening...', 'active');
+
+                console.log('Audio pipeline established');
 
             } catch (error) {
-                console.error('Error starting recording:', error);
-                updateStatus('Error: Could not access microphone');
-                addTranscript(null, `Error: ${error.message}`);
+                console.error('Error starting microphone:', error);
+                updateStatus(`Error: ${error.message}`, 'error');
+                stopListening();
             }
         }
 
-        function stopRecording() {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                isRecording = false;
-
-                // Update UI
-                recordBtn.classList.remove('recording');
-                recordBtn.classList.add('processing');
-                buttonText.textContent = 'Processing';
-                status.textContent = 'Processing audio...';
-                status.classList.remove('recording');
-                status.classList.add('processing');
-                isProcessing = true;
+        function stopListening() {
+            // Close WebSocket
+            if (ws) {
+                ws.close();
+                ws = null;
             }
+
+            // Stop audio
+            if (audioWorkletNode) {
+                audioWorkletNode.disconnect();
+                audioWorkletNode = null;
+            }
+
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+
+            // Update UI
+            isActive = false;
+            micBtn.classList.remove('active', 'listening');
+            buttonText.textContent = 'Start';
+            liveSection.style.display = 'none';
+            updateStatus('Ready to listen', '');
         }
 
-        async function processAudio() {
-            try {
-                // Create blob from recorded chunks
-                const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+        function resampleAudio(audioData, fromRate, toRate) {
+            // Simple linear resampling
+            const ratio = fromRate / toRate;
+            const newLength = Math.round(audioData.length / ratio);
+            const result = new Float32Array(newLength);
 
-                // Prepare form data
-                const formData = new FormData();
-                formData.append('audio_data', audioBlob, 'recording.webm');
+            for (let i = 0; i < newLength; i++) {
+                const srcIndex = i * ratio;
+                const srcIndexFloor = Math.floor(srcIndex);
+                const srcIndexCeil = Math.min(srcIndexFloor + 1, audioData.length - 1);
+                const t = srcIndex - srcIndexFloor;
 
-                // Update status
-                updateStatus('Uploading<span class="loading-dots"></span>');
+                // Linear interpolation
+                result[i] = audioData[srcIndexFloor] * (1 - t) + audioData[srcIndexCeil] * t;
+            }
 
-                // Send to server
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+            return result;
+        }
 
-                const result = await response.json();
+        function sendAudioData(audioData) {
+            // Convert Float32Array to base64
+            const buffer = new ArrayBuffer(audioData.length * 4);
+            const view = new Float32Array(buffer);
+            view.set(audioData);
 
-                if (response.ok && result.success) {
-                    addTranscript(result);
-                } else {
-                    addTranscript(null, result.error || 'Transcription failed');
+            const bytes = new Uint8Array(buffer);
+            const base64 = btoa(String.fromCharCode.apply(null, bytes));
+
+            // Send to server
+            ws.send(JSON.stringify({
+                type: 'audio',
+                audio: base64,
+                sample_rate: TARGET_SAMPLE_RATE,
+                format: 'float32'
+            }));
+        }
+
+        function handleWebSocketMessage(message) {
+            console.log('Received:', message);
+
+            if (message.type === 'status') {
+                if (message.message === 'connected') {
+                    console.log('Server connected, LLM:', message.llm_enabled);
                 }
-
-            } catch (error) {
-                console.error('Error processing audio:', error);
-                addTranscript(null, `Error: ${error.message}`);
-            } finally {
-                // Reset UI
-                recordBtn.classList.remove('processing');
-                buttonText.textContent = 'Start';
-                status.textContent = 'Ready to record';
-                status.classList.remove('processing');
-                isProcessing = false;
+            } else if (message.type === 'transcription') {
+                addTranscript(message.data);
+                // Flash the mic button
+                micBtn.classList.add('listening');
+                setTimeout(() => micBtn.classList.remove('listening'), 500);
+            } else if (message.type === 'error') {
+                console.error('Server error:', message.message);
+                updateStatus(`Error: ${message.message}`, 'error');
             }
         }
 
-        function addTranscript(result, errorMessage = null) {
-            // Remove empty state if present
+        function addTranscript(result) {
+            // Remove empty state
             const emptyState = transcriptsContainer.querySelector('.empty-state');
             if (emptyState) {
                 emptyState.remove();
@@ -424,66 +563,55 @@
             const item = document.createElement('div');
             item.className = 'transcript-item';
 
-            if (errorMessage) {
-                item.classList.add('error');
-                item.innerHTML = `
-                    <div class="transcript-time">${new Date().toLocaleString()}</div>
-                    <div class="transcript-text">${errorMessage}</div>
-                `;
-            } else {
-                const time = new Date(result.timestamp).toLocaleString();
-                const duration = result.duration.toFixed(2);
-                const hasLLM = result.metadata && result.metadata.llm_applied;
+            const time = new Date(result.timestamp).toLocaleString();
+            const duration = result.audio.duration.toFixed(2);
+            const hasLLM = result.metadata && result.metadata.llm_applied;
 
-                let html = `
-                    <div class="transcript-time">${time}</div>
-                    <div class="transcript-text">${result.transcription || '(no speech detected)'}</div>
-                `;
+            let html = `
+                <div class="transcript-time">${time}</div>
+                <div class="transcript-text">${result.transcription || '(no speech detected)'}</div>
+            `;
 
-                if (hasLLM && result.corrected_text !== result.transcription) {
-                    html += `<div class="transcript-text corrected">${result.corrected_text}</div>`;
-                }
-
-                html += `
-                    <div class="transcript-meta">
-                        <span>⏱️ ${duration}s</span>
-                        ${hasLLM ? '<span>✨ LLM</span>' : ''}
-                        <a href="${result.audio_url}" target="_blank">🔊 Audio</a>
-                    </div>
-                `;
-
-                item.innerHTML = html;
+            if (hasLLM && result.corrected_text !== result.transcription) {
+                html += `<div class="transcript-text corrected">${result.corrected_text}</div>`;
             }
 
-            // Add to top of list
+            html += `
+                <div class="transcript-meta">
+                    <span>⏱️ ${duration}s</span>
+                    ${hasLLM ? '<span>✨ LLM</span>' : ''}
+                    ${result.audio.url ? `<a href="${result.audio.url}" target="_blank">🔊 Audio</a>` : ''}
+                </div>
+            `;
+
+            item.innerHTML = html;
+
+            // Add to top
             transcriptsContainer.insertBefore(item, transcriptsContainer.firstChild);
+
+            // Update live text briefly
+            liveText.textContent = result.corrected_text || result.transcription;
+            liveText.classList.remove('empty');
+            setTimeout(() => {
+                liveText.textContent = 'Listening... speak naturally';
+                liveText.classList.add('empty');
+            }, 2000);
         }
 
-        function updateStatus(text) {
-            status.innerHTML = text;
-        }
-
-        function getSupportedMimeType() {
-            const types = [
-                'audio/webm;codecs=opus',
-                'audio/webm',
-                'audio/ogg;codecs=opus',
-                'audio/ogg'
-            ];
-
-            for (const type of types) {
-                if (MediaRecorder.isTypeSupported(type)) {
-                    return type;
-                }
-            }
-
-            return 'audio/webm'; // Fallback
+        function updateStatus(text, className) {
+            status.textContent = text;
+            status.className = 'status ' + className;
         }
 
         // Check for browser support
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            updateStatus('Error: Your browser does not support audio recording');
-            recordBtn.disabled = true;
+            updateStatus('Error: Browser does not support audio recording', 'error');
+            micBtn.disabled = true;
+        }
+
+        if (!window.WebSocket) {
+            updateStatus('Error: Browser does not support WebSockets', 'error');
+            micBtn.disabled = true;
         }
     </script>
 </body>
