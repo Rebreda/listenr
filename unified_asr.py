@@ -41,121 +41,40 @@ from typing import Dict, Any, Optional, Callable, List
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-import torch
+
+import requests
 
 # Import config manager
 import config_manager as cfg
 
-# Import LLM processor if available
-try:
-    from llm_processor import LLMProcessor
-    llm_available = True
-except ImportError:
-    llm_available = False
+
+# Import Lemonade LLM and ASR functions
+from llm_processor import lemonade_llm_correct, lemonade_transcribe_audio
 
 logger = logging.getLogger('unified_asr')
 
 
-class UnifiedASR:
-    """
-    Unified ASR system that works for CLI, Web, and Streaming modes.
 
-    All methods return JSON-serializable dictionaries with consistent structure.
-    """
+# --- LemonadeUnifiedASR: Use Lemonade Server for ASR and LLM ---
+class LemonadeUnifiedASR:
+    """Unified ASR using Lemonade Server for both ASR and LLM"""
+    def __init__(self, use_llm=True):
+        self.use_llm = use_llm
+        import logging
+        self.logger = logging.getLogger('lemonade_unified_asr')
 
-    def __init__(self,
-                 mode: str = 'cli',
-                 use_llm: bool = False,
-                 storage_base: Optional[str] = None):
-        """
-        Initialize the unified ASR system.
-
-        Args:
-            mode: Operation mode ('cli', 'web', or 'stream')
-            use_llm: Enable LLM post-processing
-            storage_base: Base directory for storage (defaults based on mode)
-        """
-        self.mode = mode
-
-        # Setup logging
-        log_level = getattr(logging, cfg.get_setting('Logging', 'level', 'INFO'), logging.INFO)
-        logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-        )
-
-        # Initialize LLM processor if requested
-        self.use_llm = use_llm and llm_available and cfg.get_bool_setting('LLM', 'enabled', True)
-        self.llm_processor = None
-
-        if self.use_llm:
-            try:
-                llm_model = cfg.get_setting('LLM', 'model', 'gemma2:2b')
-                llm_host = cfg.get_setting('LLM', 'ollama_host', 'http://localhost:11434')
-                llm_temp = cfg.get_float_setting('LLM', 'temperature', 0.1)
-                llm_context = cfg.get_int_setting('LLM', 'context_window', 3)
-                llm_max_tokens = cfg.get_int_setting('LLM', 'max_tokens', 100)
-                llm_timeout = cfg.get_int_setting('LLM', 'timeout', 10)
-
-                self.llm_processor = LLMProcessor(
-                    model=llm_model,
-                    ollama_host=llm_host,
-                    context_window=llm_context,
-                    temperature=llm_temp,
-                    max_tokens=llm_max_tokens,
-                    timeout=llm_timeout
-                )
-
-                if self.llm_processor.available:
-                    logger.info(f"LLM post-processing enabled with {llm_model}")
-                else:
-                    logger.warning("LLM processor not available")
-                    self.use_llm = False
-            except Exception as e:
-                logger.error(f"Failed to initialize LLM: {e}")
-                self.use_llm = False
-
-        # Setup storage
-        if storage_base:
-            self.storage_base = Path(storage_base).expanduser()
-        elif mode == 'web':
-            self.storage_base = Path.home() / 'listenr_web'
-        else:
-            self.storage_base = Path.home() / '.listenr'
-
-        self.audio_dir = self.storage_base / 'audio'
-        self.transcript_dir = self.storage_base / 'transcripts'
-        self.audio_dir.mkdir(parents=True, exist_ok=True)
-        self.transcript_dir.mkdir(parents=True, exist_ok=True)
-
-        # Audio settings
-        self.sample_rate = cfg.get_int_setting('Audio', 'sample_rate', 16000)
-        self.channels = cfg.get_int_setting('Audio', 'channels', 1)
-        self.blocksize = cfg.get_int_setting('Audio', 'blocksize', 1024)
-        self.vad_chunk_size = cfg.get_int_setting('VAD', 'vad_chunk_size', 512)
-
-        # VAD settings
-        self.speech_threshold = cfg.get_float_setting('VAD', 'speech_threshold', 0.5)
-        self.min_speech_duration_s = cfg.get_float_setting('VAD', 'min_speech_duration_s', 0.3)
-        self.max_silence_duration_s = cfg.get_float_setting('VAD', 'max_silence_duration_s', 0.8)
-        self.leading_silence_s = cfg.get_float_setting('Audio', 'leading_silence_s', 0.3)
-        self.trailing_silence_s = cfg.get_float_setting('Audio', 'trailing_silence_s', 0.3)
-
-        # Load models
-        self.load_whisper_model()
-        self.load_vad_model()
-
-        # Streaming state
-        self.running = False
-        self.audio_queue = queue.Queue()
-        self.is_speech = False
-        self.speech_frames = []
-        self.silence_chunks = 0
-        self.audio_buffer = []
-        self.max_buffer_chunks = int(self.leading_silence_s * self.sample_rate / self.vad_chunk_size)
-        self.stream_callback = None
-
-        logger.info(f"UnifiedASR initialized (mode={mode}, storage={self.storage_base}, LLM={self.use_llm})")
+    def transcribe_and_correct(self, audio_path, whisper_model="Whisper-Tiny", llm_model="Qwen3-0.6B-GGUF", system_prompt=None):
+        try:
+            raw_text = lemonade_transcribe_audio(audio_path, model=whisper_model)
+            corrected_text = None
+            if self.use_llm:
+                corrected_text = lemonade_llm_correct(raw_text, model=llm_model, system_prompt=system_prompt)
+            else:
+                corrected_text = raw_text
+            return {"raw_text": raw_text, "corrected_text": corrected_text}
+        except Exception as e:
+            self.logger.error(f"Transcription or LLM correction failed: {e}")
+            return {"error": str(e)}
 
     def load_whisper_model(self):
         """Load Whisper model (faster-whisper)"""
@@ -198,13 +117,14 @@ class UnifiedASR:
             logger.error(f"Failed to load VAD model: {e}")
             sys.exit(1)
 
-    def transcribe_audio(self, audio_data: np.ndarray, sample_rate: int) -> Dict[str, Any]:
+    def transcribe_audio(self, audio_data: np.ndarray, sample_rate: int, streaming: bool = False) -> Dict[str, Any]:
         """
         Transcribe audio data using Whisper.
 
         Args:
             audio_data: Numpy array (mono, float32)
             sample_rate: Sample rate
+            streaming: If True, enable streaming mode for faster partial results
 
         Returns:
             Dictionary with transcription results
@@ -215,10 +135,15 @@ class UnifiedASR:
             tmp_path = tmp_file.name
 
         try:
-            # Transcribe
-            beam_size = cfg.get_int_setting('Whisper', 'beam_size', 5)
-            best_of = cfg.get_int_setting('Whisper', 'best_of', 5)
-            temperature = cfg.get_float_setting('Whisper', 'temperature', 0.0)
+            # Optimized settings for real-time processing
+            if streaming:
+                beam_size = 1  # Greedy search for speed
+                best_of = 1
+                temperature = 0.0
+            else:
+                beam_size = cfg.get_int_setting('Whisper', 'beam_size', 5)
+                best_of = cfg.get_int_setting('Whisper', 'best_of', 5)
+                temperature = cfg.get_float_setting('Whisper', 'temperature', 0.0)
 
             segments, info = self.whisper_model.transcribe(
                 tmp_path,
@@ -227,14 +152,31 @@ class UnifiedASR:
                 temperature=temperature,
                 condition_on_previous_text=False,
                 vad_filter=False,
-                word_timestamps=False
+                word_timestamps=True if streaming else False,  # Get word timings for streaming
+                language='en'  # Force language for speed (remove if multilingual)
             )
 
-            raw_text = ' '.join(segment.text.strip() for segment in segments)
+            # Collect segments with timing info
+            segments_list = []
+            raw_text_parts = []
 
-            # Apply LLM if enabled
+            for segment in segments:
+                text = segment.text.strip()
+                if text:
+                    raw_text_parts.append(text)
+                    segments_list.append({
+                        'text': text,
+                        'start': segment.start,
+                        'end': segment.end,
+                        'words': [{'word': w.word, 'start': w.start, 'end': w.end}
+                                 for w in segment.words] if hasattr(segment, 'words') and segment.words else []
+                    })
+
+            raw_text = ' '.join(raw_text_parts)
+
+            # Apply LLM if enabled (skip in streaming for speed)
             corrected_text = None
-            if self.use_llm and self.llm_processor and self.llm_processor.available and raw_text:
+            if not streaming and self.use_llm and self.llm_processor and self.llm_processor.available and raw_text:
                 try:
                     corrected_text = self.llm_processor.process(raw_text, use_context=False)
                 except Exception as e:
@@ -245,6 +187,7 @@ class UnifiedASR:
                 'success': True,
                 'raw_text': raw_text,
                 'corrected_text': corrected_text or raw_text,
+                'segments': segments_list,
                 'language': info.language if hasattr(info, 'language') else None,
                 'language_probability': float(info.language_probability) if hasattr(info, 'language_probability') else None
             }
@@ -255,7 +198,8 @@ class UnifiedASR:
                 'success': False,
                 'error': str(e),
                 'raw_text': '',
-                'corrected_text': ''
+                'corrected_text': '',
+                'segments': []
             }
         finally:
             try:
@@ -300,8 +244,9 @@ class UnifiedASR:
 
             duration = float(len(audio_data)) / float(sample_rate)
 
-            # Transcribe
-            transcription_result = self.transcribe_audio(audio_data, sample_rate)
+            # Transcribe (use streaming mode for real-time)
+            streaming = self.mode == 'stream'
+            transcription_result = self.transcribe_audio(audio_data, sample_rate, streaming=streaming)
 
             # Prepare paths
             audio_path = None
@@ -329,6 +274,7 @@ class UnifiedASR:
                 'success': transcription_result['success'],
                 'transcription': transcription_result['raw_text'],
                 'corrected_text': transcription_result['corrected_text'],
+                'segments': transcription_result.get('segments', []),
                 'timestamp': timestamp.isoformat(),
                 'audio': {
                     'path': str(audio_path) if audio_path else None,
@@ -344,7 +290,8 @@ class UnifiedASR:
                     'llm_applied': self.use_llm and transcription_result['corrected_text'] != transcription_result['raw_text'],
                     'language': transcription_result.get('language'),
                     'language_probability': transcription_result.get('language_probability'),
-                    'mode': self.mode
+                    'mode': self.mode,
+                    'streaming': streaming
                 }
             }
 
@@ -534,13 +481,28 @@ class UnifiedASR:
             self.stop_stream()
 
 
+
 if __name__ == '__main__':
     import argparse
-
-    parser = argparse.ArgumentParser(description='Unified ASR - CLI mode')
+    parser = argparse.ArgumentParser(description='Lemonade Unified ASR - CLI mode')
     parser.add_argument('--llm', action='store_true', help='Enable LLM post-processing')
-    parser.add_argument('--storage', help='Storage directory')
+    parser.add_argument('--audio', type=str, help='Path to audio file to transcribe')
+    parser.add_argument('--whisper-model', type=str, default='Whisper-Tiny', help='Whisper model name')
+    parser.add_argument('--llm-model', type=str, default='Qwen3-0.6B-GGUF', help='LLM model name')
+    parser.add_argument('--system-prompt', type=str, default=None, help='System prompt for LLM')
     args = parser.parse_args()
 
-    asr = UnifiedASR(mode='cli', use_llm=args.llm, storage_base=args.storage)
-    asr.start_cli()
+    asr = LemonadeUnifiedASR(use_llm=args.llm)
+    if args.audio:
+        result = asr.transcribe_and_correct(
+            args.audio,
+            whisper_model=args.whisper_model,
+            llm_model=args.llm_model,
+            system_prompt=args.system_prompt
+        )
+        if 'error' in result:
+            print(f"Error: {result['error']}")
+        else:
+            print(f"\n[RESULT] Raw: {result['raw_text']}\n[RESULT] Corrected: {result['corrected_text']}")
+    else:
+        print("Please provide --audio path/to/audio.wav to transcribe.")

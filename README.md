@@ -1,6 +1,6 @@
 # Listenr - Live Voice Transcription
 
-**Hands-free, continuous voice transcription powered by Whisper ASR**
+**Hands-free, continuous voice transcription powered by Lemonade Server (Whisper.cpp + LLMs)**
 
 Listenr provides real-time speech-to-text transcription with automatic speech detection. No more clicking start/stop buttons - just speak naturally and watch your words appear instantly!
 
@@ -10,7 +10,7 @@ Listenr provides real-time speech-to-text transcription with automatic speech de
 - 🎯 **Smart Speech Detection**: Silero VAD automatically segments your speech
 - 🚀 **Real-Time**: WebSocket streaming for minimal latency (~500ms-2s)
 - 📱 **Mobile-First**: Beautiful touch-optimized interface for phones
-- 🤖 **Optional LLM**: Post-process with Ollama for improved accuracy
+- 🤖 **Optional LLM**: Post-process with local LLMs via Lemonade Server for improved accuracy
 - 💾 **Auto-Save**: All audio clips and transcripts saved with metadata
 - 🌐 **JSON API**: Consistent structured responses everywhere
 
@@ -40,14 +40,15 @@ python server/app.py
 # - Phone: http://YOUR_IP:5000
 ```
 
+
 ### With LLM (Optional)
 
 ```bash
-# Install Ollama from https://ollama.ai
-curl -fsSL https://ollama.ai/install.sh | sh
+# Install Lemonade Server (https://github.com/lemonade-org/lemonade)
+# Download and run models as needed (see Lemonade docs)
 
-# Pull a model
-ollama pull gemma2:2b
+# Start Lemonade Server (default port 8000)
+lemonade-server serve
 
 # Run with LLM enabled
 export LISTENR_USE_LLM=true
@@ -75,17 +76,15 @@ python server/app.py
 
 ### Command Line
 
-Use the unified ASR system directly from terminal:
+
+Use the Lemonade-powered ASR system directly from terminal:
 
 ```bash
-# CLI mode (continuous terminal transcription)
-python unified_asr.py
+# Transcribe an audio file
+python unified_asr.py --audio path/to/audio.wav
 
 # With LLM
-python unified_asr.py --llm
-
-# Custom storage
-python unified_asr.py --storage ~/my_clips
+python unified_asr.py --llm --audio path/to/audio.wav
 ```
 
 ### Mobile Usage
@@ -107,9 +106,9 @@ All transcripts save automatically with audio clips and metadata.
 
 ```
 listenr/
-├── unified_asr.py          # Core ASR system (Whisper + VAD + JSON)
+├── unified_asr.py          # Core ASR system (Lemonade API: Whisper.cpp + LLM)
 ├── config_manager.py       # Configuration management
-├── llm_processor.py        # Optional LLM post-processing
+├── llm_processor.py        # Lemonade API wrappers for LLM/ASR
 ├── server/
 │   ├── app.py              # Flask WebSocket server
 │   ├── requirements.txt    # Python dependencies
@@ -127,9 +126,9 @@ WebSocket Connection
     ↓ (base64 chunks)
 UnifiedASR.process_vad_chunk()
     ↓ (VAD segmentation)
-Whisper Transcription
+Lemonade Whisper Transcription
     ↓ (optional)
-LLM Post-Processing
+Lemonade LLM Post-Processing
     ↓
 JSON Response → WebSocket → Browser
     ↓
@@ -140,52 +139,17 @@ Display + Save to Disk
 
 All functionality uses a single `unified_asr.py` implementation that works in three modes:
 
-### CLI Mode
-```python
-from unified_asr import UnifiedASR
-
 asr = UnifiedASR(mode='cli')
 asr.start_cli()  # Continuous terminal transcription
-```
-
-### Web Mode (Single File)
-```python
-asr = UnifiedASR(mode='web')
-result = asr.process_audio(audio_data, sample_rate)
-# Returns JSON with transcription + metadata
-```
-
-### Stream Mode (Continuous)
-```python
-def callback(result):
-    print(result['transcription'])
-
 asr = UnifiedASR(mode='stream')
 asr.start_stream(callback=callback)
+
+### CLI Mode
+```bash
+python unified_asr.py --audio path/to/audio.wav
 ```
 
-All modes return consistent JSON:
-```json
-{
-  "success": true,
-  "transcription": "raw whisper output",
-  "corrected_text": "LLM-corrected version",
-  "timestamp": "2025-10-12T10:30:00Z",
-  "audio": {
-    "path": "/path/to/clip.wav",
-    "url": "/audio/2025-10-12/clip_abc123.wav",
-    "duration": 3.5,
-    "sample_rate": 16000
-  },
-  "metadata": {
-    "date": "2025-10-12",
-    "uuid": "abc123",
-    "llm_applied": true,
-    "language": "en",
-    "mode": "stream"
-  }
-}
-```
+All modes return consistent JSON (see Lemonade API docs for details).
 
 ## Configuration
 
@@ -202,15 +166,18 @@ sample_rate = 16000
 leading_silence_s = 0.3       # Silence before speech
 trailing_silence_s = 0.3      # Silence after speech
 
-[Whisper]
-model_size = base             # tiny, base, small, medium, large
-device = cpu                  # cpu or cuda
-compute_type = int8           # int8, float16, float32
+## Lemonade Server Model Selection
+#
+# Model names must match those available in your Lemonade Server instance.
+# See Lemonade docs for model management (install, load, list, etc).
 
 [LLM]
 enabled = true
-model = gemma2:2b
+model = Qwen3-0.6B-GGUF
 temperature = 0.1
+
+[Whisper]
+model = Whisper-Tiny
 ```
 
 Environment variables override config:
@@ -295,9 +262,10 @@ Much faster transcription on NVIDIA GPUs!
 - Check if another app is using the mic
 - Try HTTPS for remote access (required by browsers)
 
+
 **Transcripts are delayed**:
-- Use smaller Whisper model (base or tiny)
-- Enable GPU if available
+- Use smaller Whisper model (e.g., Whisper-Tiny)
+- Ensure Lemonade Server is running and responsive
 - Check CPU usage
 - Reduce `max_silence_duration_s` for faster segmentation
 
@@ -308,27 +276,10 @@ Much faster transcription on NVIDIA GPUs!
 
 ## Advanced Usage
 
+
 ### Custom Integration
 
-```python
-from unified_asr import UnifiedASR
-
-# Create ASR instance
-asr = UnifiedASR(
-    mode='web',
-    use_llm=True,
-    storage_base='~/my_storage'
-)
-
-# Process audio file
-import soundfile as sf
-audio, sr = sf.read('recording.wav')
-
-result = asr.process_audio(audio, sr, metadata={'user': 'john'})
-
-print(result['transcription'])
-print(result['audio']['path'])
-```
+Use the Lemonade API directly for advanced use cases. See Lemonade Server documentation for full API details and endpoints.
 
 ### Custom Callback
 
@@ -353,10 +304,9 @@ Mozilla Public License Version 2.0 - see `LICENSE`
 
 ## Acknowledgments
 
-- [OpenAI Whisper](https://github.com/openai/whisper) - Speech recognition
-- [faster-whisper](https://github.com/guillaumekln/faster-whisper) - Fast inference
-- [Silero VAD](https://github.com/snakers4/silero-vad) - Voice activity detection
-- [Ollama](https://ollama.ai) - Local LLM inference
+- [Lemonade Server](https://github.com/lemonade-org/lemonade) - Unified local inference API
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) - Fast local ASR
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) - Fast local LLMs
 
 ---
 

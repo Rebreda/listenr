@@ -212,7 +212,14 @@ def transcribe_websocket(ws):
 # ---------------------------
 @app.route('/')
 def index():
-    """Serve the live streaming web interface"""
+    """Serve the visual live streaming interface (default)"""
+    with open(Path(__file__).parent / 'templates' / 'index_visual.html', 'r') as f:
+        return render_template_string(f.read())
+
+
+@app.route('/simple')
+def simple():
+    """Serve the simple list-based interface"""
     with open(Path(__file__).parent / 'templates' / 'index.html', 'r') as f:
         return render_template_string(f.read())
 

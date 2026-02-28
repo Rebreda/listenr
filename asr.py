@@ -17,129 +17,80 @@ from datetime import datetime
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
-import torch
+
+import requests
 
 # Import config manager
 import config_manager as cfg
 
-# Import LLM processor if available
-try:
-    from llm_processor import LLMProcessor
-    llm_available = True
-except ImportError:
-    llm_available = False
-    print("Note: llm_processor.py not found. LLM post-processing disabled.")
+
+# Import Lemonade LLM and ASR functions
+from llm_processor import lemonade_llm_correct, lemonade_transcribe_audio
 
 
-class WhisperASR:
-    """Simple ASR system using Whisper and Silero VAD"""
-    
-    def __init__(self, use_llm=False):
-        # Setup logging
+
+# --- LemonadeASR: Use Lemonade Server for ASR and LLM ---
+class LemonadeASR:
+    """ASR system using Lemonade Server for both ASR and LLM"""
+    def __init__(self, use_llm=True):
         import logging
         log_level = getattr(logging, cfg.get_setting('Logging', 'level'), logging.INFO)
         log_file = cfg.get_setting('Logging', 'file')
-        
         log_handlers = [logging.StreamHandler()]
         if log_file:
             log_handlers.append(logging.FileHandler(log_file))
-        
         logging.basicConfig(
             level=log_level,
             format='%(asctime)s - %(levelname)s - %(message)s',
             handlers=log_handlers
         )
         self.logger = logging.getLogger(__name__)
-        
-        # Initialize LLM processor if requested
-        self.use_llm = use_llm and llm_available and cfg.get_bool_setting('LLM', 'enabled', True)
-        self.llm_processor = None
-        
-        if self.use_llm:
-            try:
-                # Get LLM settings from config
-                llm_model = cfg.get_setting('LLM', 'model', 'gemma2:2b')
-                llm_host = cfg.get_setting('LLM', 'ollama_host', 'http://localhost:11434')
-                llm_temp = cfg.get_float_setting('LLM', 'temperature', 0.1)
-                llm_context = cfg.get_int_setting('LLM', 'context_window', 3)
-                llm_max_tokens = cfg.get_int_setting('LLM', 'max_tokens', 100)
-                llm_timeout = cfg.get_int_setting('LLM', 'timeout', 10)
-                
-                self.llm_processor = LLMProcessor(
-                    model=llm_model,
-                    ollama_host=llm_host,
-                    context_window=llm_context,
-                    temperature=llm_temp,
-                    max_tokens=llm_max_tokens,
-                    timeout=llm_timeout
-                )
-                
-                if self.llm_processor.available:
-                    self.logger.info(f"LLM post-processing enabled with {llm_model}")
-                else:
-                    self.logger.warning("LLM processor not available. Check Ollama setup.")
-                    self.use_llm = False
-                    
-            except Exception as e:
-                self.logger.error(f"Failed to initialize LLM processor: {e}")
-                self.use_llm = False
-        
-        # Get config values
-        self.sample_rate = cfg.get_int_setting('Audio', 'sample_rate')
-        self.channels = cfg.get_int_setting('Audio', 'channels')
-        self.blocksize = cfg.get_int_setting('Audio', 'blocksize')
-        self.vad_chunk_size = cfg.get_int_setting('VAD', 'vad_chunk_size')
-        
+        self.use_llm = use_llm
         self.output_file = cfg.get_setting('Output', 'file')
         self.llm_output_file = cfg.get_setting('Output', 'llm_file', '')
         self.output_format = cfg.get_setting('Output', 'format')
         self.timestamp_format = cfg.get_setting('Output', 'timestamp_format')
         self.show_raw = cfg.get_bool_setting('Output', 'show_raw', False)
 
-        # Audio clip storage settings
-        self.audio_clips_enabled = cfg.get_bool_setting('Storage', 'audio_clips_enabled', True)
-        storage_base = cfg.get_setting(
-            'Storage',
-            'audio_clips_path',
-            os.path.join(os.path.expanduser("~"), ".listenr", "audio_clips")
-        )
-        self.audio_clips_dir = os.path.expanduser(storage_base)
-        self.clip_format = cfg.get_setting('Storage', 'clip_format', 'wav').lower()
-        self.clip_quality = cfg.get_int_setting('Storage', 'clip_quality', fallback_value=self.sample_rate)
-        self.clip_counter = 1
+    def transcribe_and_correct(self, audio_path, whisper_model="Whisper-Tiny", llm_model="Qwen3-0.6B-GGUF", system_prompt=None):
+        """Transcribe audio and optionally correct with LLM via Lemonade Server"""
+        try:
+            raw_text = lemonade_transcribe_audio(audio_path, model=whisper_model)
+            corrected_text = None
+            if self.use_llm:
+                corrected_text = lemonade_llm_correct(raw_text, model=llm_model, system_prompt=system_prompt)
+            else:
+                corrected_text = raw_text
+            self.output_transcription(raw_text, prefix="[RAW]" if self.use_llm else "")
+            if self.use_llm:
+                self.output_transcription(corrected_text, prefix="[LLM]")
+            if self.output_file:
+                self.save_transcription(raw_text, self.output_file, prefix="[RAW]" if self.use_llm else "")
+            if self.llm_output_file and self.use_llm:
+                self.save_transcription(corrected_text, self.llm_output_file, prefix="[LLM]")
+            return {"raw_text": raw_text, "corrected_text": corrected_text}
+        except Exception as e:
+            self.logger.error(f"Transcription or LLM correction failed: {e}")
+            return {"error": str(e)}
 
-        if self.audio_clips_enabled:
-            try:
-                os.makedirs(self.audio_clips_dir, exist_ok=True)
-            except Exception as exc:
-                self.logger.error(f"Failed to prepare audio clips directory {self.audio_clips_dir}: {exc}")
-                self.audio_clips_enabled = False
-        
-        self.audio_queue = queue.Queue()
-        self.running = False
-        
-        # Speech detection settings - MUST be before load_vad_model()
-        self.speech_threshold = cfg.get_float_setting('VAD', 'speech_threshold')
-        self.min_speech_duration_s = cfg.get_float_setting('VAD', 'min_speech_duration_s')
-        self.max_silence_duration_s = cfg.get_float_setting('VAD', 'max_silence_duration_s')
-        
-        # Load models (after settings are initialized)
-        self.load_whisper_model()
-        self.load_vad_model()
-        
-        # Leading/trailing silence for padding
-        self.leading_silence_s = cfg.get_float_setting('Audio', 'leading_silence_s')
-        self.trailing_silence_s = cfg.get_float_setting('Audio', 'trailing_silence_s')
-        
-        # Buffers
-        self.is_speech = False
-        self.speech_frames = []
-        self.silence_chunks = 0
-        self.audio_buffer = []  # For leading silence
-        self.max_buffer_chunks = int(self.leading_silence_s * self.sample_rate / self.vad_chunk_size)
-        
-        # Context for Whisper
-        self.last_transcription = ""
+    def output_transcription(self, text, prefix=""):
+        timestamp = datetime.now().strftime(self.timestamp_format)
+        full_text = f"{prefix} {text}".strip() if prefix else text
+        output = self.output_format.format(timestamp=timestamp, text=full_text)
+        print(f"\n{output}")
+
+    def save_transcription(self, text, filepath, prefix=""):
+        try:
+            timestamp = datetime.now().strftime(self.timestamp_format)
+            full_text = f"{prefix} {text}".strip() if prefix else text
+            output = self.output_format.format(timestamp=timestamp, text=full_text)
+            output_path = os.path.expanduser(filepath)
+            os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
+            with open(output_path, 'a', encoding='utf-8') as f:
+                f.write(f"{output}\n")
+            self.logger.debug(f"Saved to {output_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to save transcription: {e}")
     
     def load_whisper_model(self):
         """Load Whisper model based on config (faster-whisper)"""
@@ -229,86 +180,41 @@ class WhisperASR:
     
     def process_vad_chunk(self, audio_chunk):
         """Process a single VAD-sized audio chunk"""
-        # Keep buffer for leading silence
-        self.audio_buffer.append(audio_chunk)
-        if len(self.audio_buffer) > self.max_buffer_chunks:
-            self.audio_buffer.pop(0)
-        
-        try:
-            # Convert to tensor for VAD
-            audio_tensor = torch.from_numpy(audio_chunk).float()
-            
-            # Run VAD
-            speech_dict = self.vad_iterator(audio_tensor, return_seconds=False)
-            
-            if speech_dict:
-                if 'start' in speech_dict:
-                    # Speech started
-                    if not self.is_speech:
-                        self.logger.debug("Speech started")
-                        self.is_speech = True
-                        self.speech_frames = []
-                        
-                        # Add leading silence from buffer
-                        if self.leading_silence_s > 0 and len(self.audio_buffer) > 1:
-                            # Add all but the current chunk (which will be added below)
-                            for buffered_chunk in self.audio_buffer[:-1]:
-                                self.speech_frames.append(buffered_chunk)
-                            self.logger.debug(f"Added {len(self.audio_buffer)-1} chunks of leading silence")
-                    
-                    self.speech_frames.append(audio_chunk)
-                    self.silence_chunks = 0
-                    
-                elif 'end' in speech_dict:
-                    # Speech ended - but wait for patience_chunks before processing
-                    if self.is_speech and self.speech_frames:
-                        self.logger.debug("VAD detected speech end, starting patience period")
-                        self.speech_frames.append(audio_chunk)
-                        # Don't end immediately - let silence duration handle it
-            else:
-                # No speech detected in this frame
-                if self.is_speech:
-                    self.speech_frames.append(audio_chunk)
-                    self.silence_chunks += 1
-                    
-                    # Check if silence is too long
-                    max_silence_chunks = int(self.max_silence_duration_s * 
-                                            self.sample_rate / self.vad_chunk_size)
-                    
-                    # Also check for maximum recording duration
-                    max_duration_s = cfg.get_float_setting('Audio', 'max_recording_duration_s', fallback_value=30.0)
-                    max_duration_chunks = int(max_duration_s * self.sample_rate / self.vad_chunk_size)
-                    
-                    if self.silence_chunks > max_silence_chunks or len(self.speech_frames) > max_duration_chunks:
-                        if self.silence_chunks > max_silence_chunks:
-                            self.logger.debug("Max silence reached, ending speech")
-                        else:
-                            self.logger.debug("Max duration reached, ending speech")
-                        
-                        # Add trailing silence
-                        trailing_chunks = int(self.trailing_silence_s * self.sample_rate / self.vad_chunk_size)
-                        if trailing_chunks > 0:
-                            for _ in range(trailing_chunks):
-                                self.speech_frames.append(np.zeros(self.vad_chunk_size, dtype=np.float32))
-                        
-                        self.is_speech = False
-                        
-                        if self.speech_frames:
-                            self.process_speech_segment()
-                        
-                        self.speech_frames = []
-                        self.silence_chunks = 0
-                        self.vad_iterator.reset_states()
-                        
-        except Exception as e:
-            self.logger.error(f"Error in VAD processing: {e}")
-    
-    def process_speech_segment(self):
-        """Process a complete speech segment"""
-        if not self.speech_frames:
-            return
-        
+
         # Concatenate all frames
+            parser = argparse.ArgumentParser(
+                description='ASR with Lemonade Server (Whisper + LLM)',
+                formatter_class=argparse.RawDescriptionHelpFormatter,
+                epilog=f"""
+        Config file: {cfg.CONFIG_FILE}
+        Edit this file to change settings permanently.
+
+        Examples:
+          %(prog)s --audio path/to/audio.wav         # Transcribe audio file
+          %(prog)s --no-llm                         # Disable LLM post-processing
+                """
+            )
+            parser.add_argument('--no-llm', action='store_true', help='Disable LLM post-processing')
+            parser.add_argument('--audio', type=str, help='Path to audio file to transcribe')
+            parser.add_argument('--whisper-model', type=str, default='Whisper-Tiny', help='Whisper model name')
+            parser.add_argument('--llm-model', type=str, default='Qwen3-0.6B-GGUF', help='LLM model name')
+            parser.add_argument('--system-prompt', type=str, default=None, help='System prompt for LLM')
+            args = parser.parse_args()
+
+            asr = LemonadeASR(use_llm=not args.no_llm)
+            if args.audio:
+                result = asr.transcribe_and_correct(
+                    args.audio,
+                    whisper_model=args.whisper_model,
+                    llm_model=args.llm_model,
+                    system_prompt=args.system_prompt
+                )
+                if 'error' in result:
+                    print(f"Error: {result['error']}")
+                else:
+                    print(f"\n[RESULT] Raw: {result['raw_text']}\n[RESULT] Corrected: {result['corrected_text']}")
+            else:
+                print("Please provide --audio path/to/audio.wav to transcribe.")
         audio_data = np.concatenate(self.speech_frames)
         
         # Check minimum duration
@@ -597,6 +503,7 @@ Examples:
         return
     
     asr.start()
+
 
 
 if __name__ == '__main__':

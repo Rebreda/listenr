@@ -10,46 +10,47 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
 # Define defaults
 DEFAULT_CONFIG = {
     'Whisper': {
-        'model_size': 'medium.en',  # Use a more capable model
+        'model_size': 'small',  # base or small for speed, medium/large for accuracy
         'device': 'cpu',
         'compute_type': 'int8',  # int8 for CPU, float16 for GPU
-        'beam_size': '7',  # More beams = better decoding
-        'best_of': '7',
+        'beam_size': '1',  # Greedy search for streaming (1 = fastest)
+        'best_of': '1',  # Single pass for speed
         'temperature': '0.0',
-        'condition_on_previous_text': 'true',  # Better context for longer speech
-        'vad_filter': 'true',  # Remove silence in Whisper processing
-        # Adjust VAD parameters to better align with 30s chunks
-        'vad_parameters': '{"threshold": 0.5, "min_speech_duration_ms": 2000, "max_speech_duration_s": 30}',
+        'condition_on_previous_text': 'false',  # Disable for streaming independence
+        'vad_filter': 'false',  # We handle VAD ourselves
     },
     'Audio': {
         'sample_rate': '16000',
         'channels': '1',
-        'blocksize': '2048',
+        'blocksize': '2048',  # Smaller chunks for lower latency
         'input_device': 'default',  # 'default' or device number
-        'leading_silence_s': '0.5',  # Give more pre-context
-        'trailing_silence_s': '0.7',  # More context after speech
-        'max_recording_duration_s': '30',  # Maximum length of a single recording
+        'leading_silence_s': '0.2',  # Less pre-context for faster response
+        'trailing_silence_s': '0.3',  # Less post-context for faster response
+        'max_recording_duration_s': '10',  # Shorter max for streaming
     },
     'Storage': {
         'audio_clips_enabled': 'true',
         'audio_clips_path': '~/.listenr/audio_clips',
         'retention_days': '90',
         'max_storage_gb': '10',
-        'clip_format': 'wav',  # wav, flac, mp3 (mp3 requires external encoder)
-        'clip_quality': '16000',  # Target sample rate for saved clips
+        'clip_format': 'wav',
+        'clip_quality': '16000',
     },
     'VAD': {
-        'speech_threshold': '0.35',  # Lower = more sensitive (better for continuous speech)
-        'min_speech_duration_s': '0.4',  # Minimum speech to process
-        'max_silence_duration_s': '1.7',  # Wait longer before cutting off (for pauses between sentences)
+        'speech_threshold': '0.5',  # Balanced sensitivity
+        'min_speech_duration_s': '0.5',  # Catch short phrases
+        'max_silence_duration_s': '0.8',  # Quick cutoff for streaming feel
         'vad_chunk_size': '512',  # For 16kHz, Silero expects 512
-        'patience_chunks': '12',  # Extra chunks to wait after speech ends
+        'patience_chunks': '5',  # Fewer chunks for faster response
     },
     'LLM': {
-        'enabled': 'false',  # Enable LLM post-processing
-        'provider': 'ollama',
-        'model': 'gemma3:4b-it-qat',  # Ollama model to use
-        'ollama_host': 'http://localhost:11434',  # Ollama API endpoint
+        'enabled': 'true',  # Enable LLM post-processing
+        'model': 'Gemma-3-4b-it-GGUF',  # Model name
+        'api_base': 'http://localhost:11434/v1',  # OpenAI-compatible API endpoint
+        # Examples:
+        #   Ollama: http://localhost:11434/v1
+        #   Lemonade: http://localhost:8000/api/v1
+        #   OpenAI: https://api.openai.com/v1
         'temperature': '0.3',  # Low temperature for consistency
         'context_window': '5',  # Number of previous transcriptions to use as context
         'max_tokens': '150',  # Maximum tokens to generate
