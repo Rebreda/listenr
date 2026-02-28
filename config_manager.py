@@ -10,14 +10,17 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
 # Define defaults
 DEFAULT_CONFIG = {
     'Whisper': {
-        'model_size': 'small',  # base or small for speed, medium/large for accuracy
+        # Lemonade Server model name, e.g. Whisper-Large-v3-Turbo, Whisper-Tiny, Whisper-Base, etc.
+        'model': 'Whisper-Large-v3-Turbo',
+        # The following fields are not used by Lemonade API but kept for compatibility:
+        'model_size': 'large-v3',
         'device': 'cpu',
-        'compute_type': 'int8',  # int8 for CPU, float16 for GPU
-        'beam_size': '1',  # Greedy search for streaming (1 = fastest)
-        'best_of': '1',  # Single pass for speed
+        'compute_type': 'int8',
+        'beam_size': '1',
+        'best_of': '1',
         'temperature': '0.0',
-        'condition_on_previous_text': 'false',  # Disable for streaming independence
-        'vad_filter': 'false',  # We handle VAD ourselves
+        'condition_on_previous_text': 'false',
+        'vad_filter': 'false',
     },
     'Audio': {
         'sample_rate': '16000',
@@ -45,7 +48,7 @@ DEFAULT_CONFIG = {
     },
     'LLM': {
         'enabled': 'true',  # Enable LLM post-processing
-        'model': 'Qwen3-0.6B-GGUF',  # Model name (must match Lemonade Server model)
+        'model': 'gpt-oss-20b-mxfp4-GGUF',  # Model name (must match Lemonade Server model)
         'api_base': 'http://localhost:8000/api/v1',  # Lemonade Server API endpoint (see https://lemonade-server.ai)
         # Lemonade: http://localhost:8000/api/v1
         # See https://lemonade-server.ai for docs and model management

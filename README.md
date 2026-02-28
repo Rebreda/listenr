@@ -1,38 +1,77 @@
-# Listenr - Live Voice Transcription
 
-**Hands-free, continuous voice transcription powered by Lemonade Server (Whisper.cpp + LLMs)**
+# Listenr: Local Dataset Collection for ASR Training
 
-Listenr provides real-time speech-to-text transcription with automatic speech detection. No more clicking start/stop buttons - just speak naturally and watch your words appear instantly!
+Listenr is a privacy-first tool for collecting real-world audio and high-quality transcriptions, designed to help users and researchers build better automatic speech recognition (ASR) models. Instead of sending your voice to the cloud, Listenr runs entirely on your own hardware, using open-source models and local inference to capture, transcribe, and correct natural speech. The result is a rich, automatically-enhanced dataset—ideal for training and fine-tuning ASR systems.
+
+## Why Listenr?
+
+- **Local-Only, Private by Design:** All processing happens on your machine. No audio or text is sent to external servers or cloud APIs.
+- **Open Models, Open Hardware:** Uses Lemonade Server to run open-source models (Whisper.cpp, Llama.cpp, etc.) on your CPU, GPU, or NPU.
+- **Automatic Correction Pipeline:** Transcriptions are improved using a local LLM, which leverages conversation context (previous and next utterances) to correct errors, punctuation, and grammar—creating a more accurate text corpus.
+- **Real-World Data:** Collects natural, conversational speech in realistic environments, not just lab conditions.
+- **Dataset-Ready Output:** Audio clips and their corrected transcriptions are saved together, ready for use in ASR model training or fine-tuning.
+
+## How It Works
+
+1. **Continuous Recording:** Listenr captures audio as you speak, segmenting speech automatically using VAD (voice activity detection).
+2. **Local Transcription:** Each segment is transcribed using a local Whisper model via Lemonade Server.
+3. **Contextual Correction:** A local LLM reviews the transcription, using surrounding conversation context to correct mistakes and improve fluency.
+4. **Corpus Creation:** Both the original and corrected transcriptions, along with the audio, are saved for each segment—building a high-quality dataset as you use the tool.
+
+## Why This Matters for ASR Training
+
+Training and fine-tuning ASR models requires large, diverse, and accurate datasets. Listenr makes it easy to collect such data in real-world conditions, with minimal manual effort. The automatic correction pipeline means you get not just raw machine transcriptions, but also contextually-improved, human-like text—boosting the quality of your training corpus. This is especially valuable for:
+
+- **Domain Adaptation:** Collect speech in your target environment (e.g., meetings, home, fieldwork) to adapt models to your needs.
+- **Accent and Language Coverage:** Gather data from real users, capturing natural variation in speech.
+- **Error Correction Research:** Study how LLMs can post-process ASR output for better downstream performance.
+
+## Quick Start
+
 
 ## Features
 
-- ✨ **Continuous Listening**: Microphone stays open, transcripts appear automatically
-- 🎯 **Smart Speech Detection**: Silero VAD automatically segments your speech
-- 🚀 **Real-Time**: WebSocket streaming for minimal latency (~500ms-2s)
-- 📱 **Mobile-First**: Beautiful touch-optimized interface for phones
-- 🤖 **Optional LLM**: Post-process with local LLMs via Lemonade Server for improved accuracy
-- 💾 **Auto-Save**: All audio clips and transcripts saved with metadata
-- 🌐 **JSON API**: Consistent structured responses everywhere
+- Continuous listening and segmentation (no start/stop buttons)
+- Smart VAD-based speech detection
+- Real-time transcription and correction pipeline
+- Mobile-friendly web interface
+- All data saved locally, organized for dataset use
 
 ## Quick Start
+
+brew install ffmpeg
 
 ### Installation
 
 ```bash
-# Install dependencies
+# Install Python dependencies
 pip install -r server/requirements.txt
 
-# Install ffmpeg (if not already installed)
+# (Optional) Install ffmpeg if you want to support a wide range of audio file formats for upload or batch processing.
+# For most live microphone/web use, ffmpeg is not required unless you plan to import/export non-wav files.
 # Linux:
 sudo apt install ffmpeg
 # macOS:
 brew install ffmpeg
 ```
 
-### Run the Server
+
+### Start Lemonade Server
+
+Lemonade Server is required for all local inference. See https://lemonade-server.ai for installation and model management.
 
 ```bash
-# Basic usage
+# Install Lemonade Server (see https://lemonade-server.ai)
+# Download and run models as needed (see Lemonade docs)
+
+# Start Lemonade Server (default port 8000)
+lemonade-server serve
+```
+
+### Run Listenr
+
+```bash
+# Start the Listenr web server
 python server/app.py
 
 # Open in browser:
@@ -41,16 +80,12 @@ python server/app.py
 ```
 
 
-### With LLM (Optional)
+
+### Enable LLM Correction (Optional)
+
+To enable local LLM-based correction, make sure you have a compatible LLM model downloaded and available in Lemonade Server. Then set the environment variable before starting Listenr:
 
 ```bash
-# Install Lemonade Server (https://github.com/lemonade-org/lemonade)
-# Download and run models as needed (see Lemonade docs)
-
-# Start Lemonade Server (default port 8000)
-lemonade-server serve
-
-# Run with LLM enabled
 export LISTENR_USE_LLM=true
 python server/app.py
 ```
@@ -66,13 +101,12 @@ python server/app.py
 5. Pause between thoughts
 6. Watch transcripts appear automatically!
 
-**That's it!** No more clicking buttons. The system automatically:
-- Detects when you start speaking
-- Records your speech
-- Detects when you pause/finish
-- Transcribes the audio
-- Displays the transcript
-- Saves everything to disk
+
+The system automatically:
+- Detects when you start and stop speaking
+- Records and segments your speech
+- Transcribes and corrects each segment
+- Saves audio and both raw/corrected text for every utterance
 
 ### Command Line
 
@@ -89,7 +123,8 @@ python unified_asr.py --llm --audio path/to/audio.wav
 
 ### Mobile Usage
 
-Perfect for hands-free recording on your phone:
+
+Great for hands-free, natural data collection on your phone:
 
 1. Start server on your computer
 2. Find your IP: `ip addr show | grep inet`
@@ -135,21 +170,14 @@ JSON Response → WebSocket → Browser
 Display + Save to Disk
 ```
 
-## Unified ASR System
-
-All functionality uses a single `unified_asr.py` implementation that works in three modes:
-
 asr = UnifiedASR(mode='cli')
 asr.start_cli()  # Continuous terminal transcription
 asr = UnifiedASR(mode='stream')
 asr.start_stream(callback=callback)
 
-### CLI Mode
-```bash
-python unified_asr.py --audio path/to/audio.wav
-```
+## Unified ASR System
 
-All modes return consistent JSON (see Lemonade API docs for details).
+All functionality uses a single `unified_asr.py` implementation. You can use it for batch, streaming, or web-based collection. All outputs are saved in a consistent, dataset-friendly format (see Lemonade API docs for details).
 
 ## Configuration
 
@@ -214,19 +242,13 @@ Each transcript JSON includes:
 - Language detection
 - All metadata
 
-## Tips
 
-### For Best Results
+## Tips for High-Quality Data
 
-1. **Speak Clearly**: Normal conversational pace works best
-2. **Pause Between Thoughts**: Helps VAD segment naturally (0.5-1s)
-3. **Quiet Background**: Reduces false positives
-4. **Good Microphone**: Phone/laptop mics work fine, headset is better
-5. **Local Network**: Keep phone and server on same network for best latency
-
-### Tuning VAD
-
-If you get too many/few segments:
+- Speak naturally, as you would in real conversations
+- Pause briefly between thoughts to help segmentation
+- Use a quiet environment for best results, but real-world noise is valuable for robust models
+- Use a good microphone if possible
 
 ```ini
 # More sensitive (segments shorter speech)
@@ -240,15 +262,10 @@ speech_threshold = 0.7
 max_silence_duration_s = 1.5
 ```
 
+
 ### GPU Acceleration
 
-```ini
-[Whisper]
-device = cuda           # Use GPU
-compute_type = float16  # GPU precision
-```
-
-Much faster transcription on NVIDIA GPUs!
+If your hardware supports it, Lemonade Server can use your GPU for faster inference. See Lemonade documentation for details.
 
 ## Troubleshooting
 
@@ -310,4 +327,4 @@ Mozilla Public License Version 2.0 - see `LICENSE`
 
 ---
 
-**Enjoy hands-free, continuous voice transcription!** 🎤
+
