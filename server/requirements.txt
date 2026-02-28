@@ -1,22 +1,11 @@
-# Flask web framework
+# Requirements for Listenr (Lemonade Server backend)
+# Lemonade Server: https://lemonade-server.ai
+
 Flask>=3.0.0
-
-# WebSocket support for live streaming
 flask-sock>=0.7.0
-
-# Audio processing
+requests>=2.31.0
 soundfile>=0.12.1
 numpy>=1.24.0
-
-# Whisper ASR (faster-whisper)
-faster-whisper>=1.0.0
-
-# VAD (Voice Activity Detection)
-torch>=2.0.0
-# Note: Silero VAD is loaded via torch.hub
-
-# Utilities
 werkzeug>=3.0.0
-
 # Optional: WSGI server for production
 # gunicorn>=21.0.0

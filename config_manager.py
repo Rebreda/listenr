@@ -45,12 +45,10 @@ DEFAULT_CONFIG = {
     },
     'LLM': {
         'enabled': 'true',  # Enable LLM post-processing
-        'model': 'Gemma-3-4b-it-GGUF',  # Model name
-        'api_base': 'http://localhost:11434/v1',  # OpenAI-compatible API endpoint
-        # Examples:
-        #   Ollama: http://localhost:11434/v1
-        #   Lemonade: http://localhost:8000/api/v1
-        #   OpenAI: https://api.openai.com/v1
+        'model': 'Qwen3-0.6B-GGUF',  # Model name (must match Lemonade Server model)
+        'api_base': 'http://localhost:8000/api/v1',  # Lemonade Server API endpoint (see https://lemonade-server.ai)
+        # Lemonade: http://localhost:8000/api/v1
+        # See https://lemonade-server.ai for docs and model management
         'temperature': '0.3',  # Low temperature for consistency
         'context_window': '5',  # Number of previous transcriptions to use as context
         'max_tokens': '150',  # Maximum tokens to generate
@@ -100,7 +98,8 @@ def load_config():
             with open(CONFIG_FILE, 'w') as configfile:
                 # Write header comment
                 configfile.write(f"# {APP_NAME} Configuration File\n")
-                configfile.write("# Edit this file to customize ASR settings\n\n")
+                configfile.write("# Edit this file to customize ASR settings\n")
+                configfile.write("# Lemonade Server: https://lemonade-server.ai\n\n")
                 
                 for section in config.sections():
                     configfile.write(f"[{section}]\n")
