@@ -3,10 +3,6 @@ Unit tests for llm_processor._parse_llm_correction().
 Run with:  python -m pytest tests/
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 import pytest
 from llm_processor import _parse_llm_correction
 

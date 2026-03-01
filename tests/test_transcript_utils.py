@@ -3,10 +3,6 @@ Unit tests for transcript_utils — is_hallucination() and strip_noise_tags().
 Run with:  python -m pytest tests/
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 import pytest
 from transcript_utils import is_hallucination, strip_noise_tags, clean_transcript
 
