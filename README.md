@@ -1,7 +1,7 @@
 
 # Listenr: Local Dataset Collection for ASR Training
 
-Listenr is a privacy-first tool for collecting real-world audio and high-quality transcriptions, designed to help users and researchers build better automatic speech recognition (ASR) models. Instead of sending your voice to the cloud, Listenr runs entirely on your own hardware, using open-source models and local inference to capture, transcribe, and correct natural speech. The result is a rich, automatically-enhanced dataset—ideal for training and fine-tuning ASR systems.
+Listenr is a privacy-first tool for collecting real-world audio and high-quality transcriptions, designed to help users and researchers build better automatic speech recognition (ASR) models. Instead of sending your voice to the cloud, Listenr runs entirely on your own hardware, using open-source models and local inference to capture, transcribe, and correct natural speech. The result is a rich, automatically-enhanced dataset that is ideal for training and fine-tuning ASR systems.
 
 ## Why Listenr?
 
@@ -201,11 +201,11 @@ trailing_silence_s = 0.3      # Silence after speech
 
 [LLM]
 enabled = true
-model = Qwen3-0.6B-GGUF
+model = gpt-oss-20b-mxfp4-GGUF
 temperature = 0.1
 
 [Whisper]
-model = Whisper-Tiny
+model = Whisper-Large-v3-Turbo
 ```
 
 Environment variables override config:

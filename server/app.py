@@ -1,44 +1,33 @@
-#!/usr/bin/env python3
-"""
-Listenr Web Server - Live Streaming Transcription
-
-Real-time continuous audio transcription with WebSocket support.
-Microphone stays open, transcripts appear live as you speak.
-
-Features:
-- Continuous microphone streaming (no start/stop!)
-- Real-time transcription via WebSockets
-- Automatic speech segmentation with VAD
-- JSON responses with full metadata
-- Mobile-optimized interface
-- Optional LLM post-processing
-
-Environment variables:
-    LISTENR_STORAGE: Base directory for storage (default: ~/listenr_web)
-    LISTENR_PORT: Port to run on (default: 5000)
-    LISTENR_HOST: Host to bind to (default: 0.0.0.0)
-    LISTENR_USE_LLM: Enable LLM post-processing (default: false)
-
-Usage:
-    pip install -r server/requirements.txt
-    python server/app.py
-"""
-
-import os
-import sys
-import logging
-import json
-import base64
-from pathlib import Path
-from datetime import datetime, timezone
-
+import asyncio
+import numpy as np
 from flask import Flask, render_template_string, jsonify, request
 from flask_sock import Sock
-import numpy as np
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from unified_asr import UnifiedASR
+# ---------------------------
+# Flask App with WebSocket
+# ---------------------------
+
+
+# ---------------------------
+# Config API for frontend (must come after app is defined)
+# ---------------------------
+@app.route('/api/config')
+def api_config():
+    from config_manager import get_setting
+    # Get WebSocket URL and model from config
+    ws_url = get_setting('Lemonade', 'realtime_ws_url', None)
+    if not ws_url:
+        api_base = get_setting('LLM', 'api_base', None)
+        if api_base:
+            ws_url = api_base.replace('/api/v1', '/realtime')
+        else:
+            ws_url = 'ws://localhost:8000/realtime'
+    model = get_setting('Whisper', 'model', 'Whisper-Tiny')
+    return jsonify({
+        'ws_url': ws_url,
+        'model': model
+    })
+
 
 # ---------------------------
 # Configuration
@@ -57,154 +46,65 @@ logging.basicConfig(
 )
 logger = logging.getLogger('listenr_stream')
 
-# ---------------------------
-# Flask App with WebSocket
-# ---------------------------
-app = Flask(__name__, static_folder='static', template_folder='templates')
-sock = Sock(app)
-
-# Global ASR instance (shared across connections)
-asr_instance = None
 
 
 def get_asr():
-    """Get or create ASR instance"""
-    global asr_instance
-    if asr_instance is None:
-        logger.info("Initializing ASR...")
-        asr_instance = UnifiedASR(mode='stream', use_llm=USE_LLM, storage_base=str(STORAGE_BASE))
-    return asr_instance
+    """Get or create LemonadeUnifiedASR instance"""
+    # No stateful model needed, just return a new instance (stateless Lemonade client)
+    return LemonadeUnifiedASR(use_llm=USE_LLM)
 
 
 # ---------------------------
 # WebSocket Handler
 # ---------------------------
+
+# --- Lemonade-native streaming: forward audio chunks to Lemonade /realtime WebSocket ---
 @sock.route('/transcribe')
 def transcribe_websocket(ws):
     """
-    WebSocket endpoint for live audio streaming.
-
-    Protocol:
-        Client sends: JSON messages with base64-encoded audio
-        {
-            "audio": "base64_encoded_audio_data",
-            "sample_rate": 16000,
-            "format": "float32"
-        }
-
-        Server sends: JSON transcription results
-        {
-            "type": "transcription",
-            "data": { ... full JSON result ... }
-        }
-
-        Server also sends status messages:
-        {
-            "type": "status",
-            "message": "connected|processing|error"
-        }
+    WebSocket endpoint for live audio streaming (Lemonade-native).
+    Client sends: JSON with base64-encoded audio chunks.
+    Server streams back Lemonade results as they arrive.
     """
     logger.info(f"WebSocket connection established from {request.remote_addr}")
-
+    asr = get_asr()
     try:
-        asr = get_asr()
+        ws.send(json.dumps({
+            'type': 'status',
+            'message': 'connected',
+            'llm_enabled': USE_LLM
+        }))
 
-        # Send connection confirmation
-        try:
-            ws.send(json.dumps({
-                'type': 'status',
-                'message': 'connected',
-                'llm_enabled': USE_LLM
-            }))
-        except Exception as e:
-            logger.error(f"Failed to send connection confirmation: {e}")
-            return
-
-        # Audio processing state
-        accumulated_audio = np.array([], dtype=np.float32)
-
-        while True:
-            # Receive audio data from client
-            try:
-                message = ws.receive(timeout=30)  # 30 second timeout
+        async def audio_stream():
+            while True:
+                message = ws.receive()
                 if message is None:
-                    logger.info("WebSocket client disconnected (None message)")
                     break
-            except Exception as e:
-                # Connection closed or timeout
-                if "Connection closed" in str(e) or "ConnectionClosed" in str(type(e).__name__):
-                    logger.info("WebSocket connection closed by client")
-                else:
-                    logger.warning(f"WebSocket receive error: {e}")
-                break
-
-            try:
                 data = json.loads(message)
-
                 if data.get('type') == 'audio':
-                    # Decode audio
                     audio_b64 = data['audio']
                     audio_bytes = base64.b64decode(audio_b64)
-                    audio_array = np.frombuffer(audio_bytes, dtype=np.float32)
-
-                    # Accumulate audio
-                    accumulated_audio = np.concatenate([accumulated_audio, audio_array])
-
-                    # Process in VAD-sized chunks
-                    while len(accumulated_audio) >= asr.vad_chunk_size:
-                        vad_chunk = accumulated_audio[:asr.vad_chunk_size]
-                        accumulated_audio = accumulated_audio[asr.vad_chunk_size:]
-
-                        # Process chunk (this handles VAD and transcription)
-                        result = asr.process_vad_chunk(vad_chunk)
-
-                        if result:
-                            # Send transcription result to client
-                            try:
-                                ws.send(json.dumps({
-                                    'type': 'transcription',
-                                    'data': result
-                                }))
-                            except Exception as e:
-                                logger.error(f"Failed to send transcription: {e}")
-                                break
-
+                    yield audio_bytes
                 elif data.get('type') == 'ping':
-                    # Keepalive
-                    try:
-                        ws.send(json.dumps({'type': 'pong'}))
-                    except:
-                        break
+                    ws.send(json.dumps({'type': 'pong'}))
 
-            except json.JSONDecodeError:
-                logger.error("Invalid JSON received")
-                try:
+        # Run the Lemonade WebSocket client in an event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            async def forward_results():
+                async for result in asr.stream_transcribe(audio_stream()):
                     ws.send(json.dumps({
-                        'type': 'error',
-                        'message': 'Invalid JSON'
+                        'type': 'transcription',
+                        'data': result
                     }))
-                except:
-                    break
-
-            except Exception as e:
-                logger.exception(f"Error processing audio chunk: {e}")
-                try:
-                    ws.send(json.dumps({
-                        'type': 'error',
-                        'message': str(e)
-                    }))
-                except:
-                    break
-
+            loop.run_until_complete(forward_results())
+        finally:
+            loop.close()
     except Exception as e:
         logger.exception(f"WebSocket handler error: {e}")
     finally:
         logger.info("WebSocket connection closed")
-        # Reset VAD state for this client
-        try:
-            asr.vad_iterator.reset_states()
-        except:
-            pass
 
 
 # ---------------------------

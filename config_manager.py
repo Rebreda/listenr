@@ -12,15 +12,6 @@ DEFAULT_CONFIG = {
     'Whisper': {
         # Lemonade Server model name, e.g. Whisper-Large-v3-Turbo, Whisper-Tiny, Whisper-Base, etc.
         'model': 'Whisper-Large-v3-Turbo',
-        # The following fields are not used by Lemonade API but kept for compatibility:
-        'model_size': 'large-v3',
-        'device': 'cpu',
-        'compute_type': 'int8',
-        'beam_size': '1',
-        'best_of': '1',
-        'temperature': '0.0',
-        'condition_on_previous_text': 'false',
-        'vad_filter': 'false',
     },
     'Audio': {
         'sample_rate': '16000',

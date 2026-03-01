@@ -60,8 +60,7 @@
     <div class="history" id="history"></div>
 </div>
 <script>
-const LEMONADE_WS_PORT = 8001; // Discover via /api/v1/health if needed
-const LEMONADE_WS_MODEL = "Whisper-Tiny";
+
 let ws = null;
 let audioContext = null;
 let mediaStream = null;
@@ -71,6 +70,16 @@ let micBtn = document.getElementById('micBtn');
 let historyDiv = document.getElementById('history');
 let audioSource = null;
 let processor = null;
+let WS_URL = null;
+let WS_MODEL = null;
+
+// Fetch config from backend
+async function fetchConfig() {
+    let resp = await fetch('/api/config');
+    let data = await resp.json();
+    WS_URL = data.ws_url;
+    WS_MODEL = data.model;
+}
 
 micBtn.onclick = async function() {
     if (!isActive) {
@@ -82,10 +91,8 @@ micBtn.onclick = async function() {
 
 async function start() {
     try {
-        // Discover Lemonade websocket port (optional, hardcoded here)
-        // let health = await fetch("http://localhost:8000/api/v1/health").then(r => r.json());
-        // let wsPort = health.websocket_port || 8001;
-        let wsUrl = `ws://localhost:${LEMONADE_WS_PORT}/realtime?model=${encodeURIComponent(LEMONADE_WS_MODEL)}`;
+        if (!WS_URL || !WS_MODEL) await fetchConfig();
+        let wsUrl = WS_URL.includes('?') ? `${WS_URL}&model=${encodeURIComponent(WS_MODEL)}` : `${WS_URL}?model=${encodeURIComponent(WS_MODEL)}`;
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
