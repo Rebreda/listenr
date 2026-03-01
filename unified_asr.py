@@ -81,41 +81,109 @@ class LemonadeUnifiedASR:
     async def stream_transcribe(self, audio_stream, whisper_model=None, on_result=None, lemonade_ws_url=None):
         """
         Stream audio to Lemonade's /realtime WebSocket endpoint and yield transcriptions.
-        audio_stream: async generator yielding bytes (PCM or WAV chunks)
-        on_result: optional callback for each result
-        lemonade_ws_url: override Lemonade WebSocket URL (default from config)
+
+        audio_stream: async generator yielding raw PCM16 bytes chunks (16kHz, mono)
+        on_result: optional callback for each result dict
+        lemonade_ws_url: full WebSocket URL including ?model= param (overrides config)
+
+        Lemonade /realtime protocol:
+          Client → Server:
+            session.update           — configure VAD settings
+            input_audio_buffer.append — base64-encoded PCM16 audio chunk
+            input_audio_buffer.commit — force transcription of remaining buffer
+          Server → Client:
+            session.created / session.updated
+            input_audio_buffer.speech_started / speech_stopped / committed / cleared
+            conversation.item.input_audio_transcription.delta  — partial
+            conversation.item.input_audio_transcription.completed — final
+            error
         """
-        import websockets
-        import json
-        # Use config defaults if not provided
+        import base64
+
         if whisper_model is None:
-            whisper_model = cfg.get_setting('Whisper', 'model', 'Whisper-Tiny')
+            whisper_model = cfg.get_setting('Whisper', 'model', 'Whisper-Small')
         if lemonade_ws_url is None:
-            # Try both Lemonade and LLM config sections for endpoint
-            lemonade_ws_url = cfg.get_setting('Lemonade', 'realtime_ws_url', None)
-            if not lemonade_ws_url:
-                api_base = cfg.get_setting('LLM', 'api_base', None)
-                if api_base:
-                    lemonade_ws_url = api_base.replace('/api/v1', '/realtime')
-                else:
-                    lemonade_ws_url = 'ws://localhost:8000/realtime'
-        params = {"model": whisper_model}
-        url = lemonade_ws_url + "?" + "&".join(f"{k}={v}" for k,v in params.items())
-        async with websockets.connect(url, max_size=10*1024*1024) as ws:
-            async for chunk in audio_stream:
-                await ws.send(chunk)
-                response = await ws.recv()
-                result = json.loads(response)
-                if on_result:
-                    on_result(result)
-                yield result
-            await ws.send("__END__")
-            # Final result
-            response = await ws.recv()
-            result = json.loads(response)
-            if on_result:
-                on_result(result)
-            yield result
+            api_base = cfg.get_setting('LLM', 'api_base', 'http://localhost:8000/api/v1') or 'http://localhost:8000/api/v1'
+            try:
+                resp = requests.get(f"{api_base}/health", timeout=5)
+                ws_port = resp.json().get('websocket_port', 8001)
+            except Exception:
+                ws_port = 8001
+            lemonade_ws_url = f"ws://localhost:{ws_port}/realtime?model={whisper_model}"
+
+        async with websockets.connect(lemonade_ws_url, max_size=10 * 1024 * 1024) as ws:
+            # Configure VAD via session.update (spec-defined keys only)
+            await ws.send(json.dumps({
+                "type": "session.update",
+                "session": {
+                    "model": whisper_model,
+                    "turn_detection": {
+                        "threshold": cfg.get_float_setting('VAD', 'threshold', 0.01),
+                        "silence_duration_ms": cfg.get_int_setting('VAD', 'silence_duration_ms', 800),
+                        "prefix_padding_ms": cfg.get_int_setting('VAD', 'prefix_padding_ms', 250),
+                    },
+                },
+            }))
+
+            # Send audio and receive results concurrently using asyncio tasks
+            result_queue: asyncio.Queue = asyncio.Queue()
+
+            async def _send_audio():
+                async for chunk in audio_stream:
+                    b64_audio = base64.b64encode(chunk).decode('utf-8')
+                    await ws.send(json.dumps({
+                        "type": "input_audio_buffer.append",
+                        "audio": b64_audio,
+                    }))
+                # Signal end of audio stream
+                await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                await result_queue.put(None)  # sentinel: sender is done
+
+            async def _recv_messages():
+                async for raw in ws:
+                    msg = json.loads(raw)
+                    msg_type = msg.get('type', '')
+                    if msg_type in (
+                        'conversation.item.input_audio_transcription.completed',
+                        'input_audio_buffer.speech_started',
+                        'error',
+                    ):
+                        await result_queue.put(msg)
+                    elif msg_type in ('response.done', 'session.closed'):
+                        break
+
+            send_task = asyncio.ensure_future(_send_audio())
+            recv_task = asyncio.ensure_future(_recv_messages())
+
+            sender_done = False
+            try:
+                while True:
+                    item = await result_queue.get()
+                    if item is None:
+                        sender_done = True
+                        # Drain any remaining messages briefly after sender finishes
+                        try:
+                            while True:
+                                item = await asyncio.wait_for(result_queue.get(), timeout=3.0)
+                                if item is None:
+                                    break
+                                if on_result:
+                                    on_result(item)
+                                yield item
+                        except asyncio.TimeoutError:
+                            pass
+                        break
+                    if on_result:
+                        on_result(item)
+                    yield item
+            finally:
+                send_task.cancel()
+                recv_task.cancel()
+                for t in (send_task, recv_task):
+                    try:
+                        await t
+                    except (asyncio.CancelledError, Exception):
+                        pass
 
 if __name__ == '__main__':
     import argparse

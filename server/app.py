@@ -1,38 +1,45 @@
+#!/usr/bin/env python3
+"""
+Listenr Web Server - Live Streaming Transcription
+
+Real-time audio transcription via Lemonade Server WebSocket API.
+Browser captures microphone → Lemonade Whisper → optional LLM correction.
+
+Environment variables:
+    LISTENR_STORAGE: Base directory for storage (default from config)
+    LISTENR_PORT: Port to run on (default: 5000)
+    LISTENR_HOST: Host to bind to (default: 0.0.0.0)
+    LISTENR_USE_LLM: Enable LLM post-processing (default: false)
+
+Usage:
+    python server/app.py
+"""
+
+import os
+import sys
 import asyncio
-import numpy as np
+import logging
+import json
+import base64
+from pathlib import Path
+from datetime import datetime, timezone
+
 from flask import Flask, render_template_string, jsonify, request
 from flask_sock import Sock
+import requests
 
-# ---------------------------
-# Flask App with WebSocket
-# ---------------------------
-
-
-# ---------------------------
-# Config API for frontend (must come after app is defined)
-# ---------------------------
-@app.route('/api/config')
-def api_config():
-    from config_manager import get_setting
-    # Get WebSocket URL and model from config
-    ws_url = get_setting('Lemonade', 'realtime_ws_url', None)
-    if not ws_url:
-        api_base = get_setting('LLM', 'api_base', None)
-        if api_base:
-            ws_url = api_base.replace('/api/v1', '/realtime')
-        else:
-            ws_url = 'ws://localhost:8000/realtime'
-    model = get_setting('Whisper', 'model', 'Whisper-Tiny')
-    return jsonify({
-        'ws_url': ws_url,
-        'model': model
-    })
-
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from unified_asr import LemonadeUnifiedASR
+import config_manager as cfg
 
 # ---------------------------
 # Configuration
 # ---------------------------
-STORAGE_BASE = Path(os.environ.get('LISTENR_STORAGE', Path.home() / 'listenr_web'))
+STORAGE_BASE = Path(os.environ.get(
+    'LISTENR_STORAGE',
+    cfg.get_setting('Storage', 'audio_clips_path', '~/listenr_recordings')
+)).expanduser()
 PORT = int(os.environ.get('LISTENR_PORT', '5000'))
 HOST = os.environ.get('LISTENR_HOST', '0.0.0.0')
 USE_LLM = os.environ.get('LISTENR_USE_LLM', 'false').lower() in ('true', '1', 'yes')
@@ -44,30 +51,71 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
-logger = logging.getLogger('listenr_stream')
+logger = logging.getLogger('listenr_server')
 
+# ---------------------------
+# Flask App
+# ---------------------------
+app = Flask(__name__, static_folder='static', template_folder='templates')
+sock = Sock(app)
+
+
+def get_lemonade_ws_url():
+    """Discover Lemonade WebSocket URL dynamically via /api/v1/health."""
+    api_base = cfg.get_setting('LLM', 'api_base', 'http://localhost:8000/api/v1') or 'http://localhost:8000/api/v1'
+    health_url = api_base.rstrip('/').replace('/api/v1', '') + '/api/v1/health'
+    model = cfg.get_setting('Whisper', 'model', 'Whisper-Tiny')
+    try:
+        resp = requests.get(health_url, timeout=2)
+        resp.raise_for_status()
+        data = resp.json()
+        ws_port = data.get('websocket_port', 8001)
+        return f"ws://localhost:{ws_port}/realtime?model={model}"
+    except Exception as e:
+        logger.warning(f"Could not discover Lemonade websocket port: {e}")
+        return f"ws://localhost:8001/realtime?model={model}"
 
 
 def get_asr():
-    """Get or create LemonadeUnifiedASR instance"""
-    # No stateful model needed, just return a new instance (stateless Lemonade client)
     return LemonadeUnifiedASR(use_llm=USE_LLM)
+
+
+# ---------------------------
+# Config API for frontend
+# ---------------------------
+@app.route('/api/config')
+def api_config():
+    """Return Lemonade WebSocket URL and model for the frontend."""
+    ws_url = get_lemonade_ws_url()
+    model = cfg.get_setting('Whisper', 'model', 'Whisper-Tiny')
+    return jsonify({
+        'ws_url': ws_url,
+        'model': model,
+        'llm_enabled': USE_LLM,
+    })
 
 
 # ---------------------------
 # WebSocket Handler
 # ---------------------------
-
-# --- Lemonade-native streaming: forward audio chunks to Lemonade /realtime WebSocket ---
 @sock.route('/transcribe')
 def transcribe_websocket(ws):
     """
-    WebSocket endpoint for live audio streaming (Lemonade-native).
-    Client sends: JSON with base64-encoded audio chunks.
-    Server streams back Lemonade results as they arrive.
+    WebSocket endpoint: receives audio from browser, streams to Lemonade,
+    returns transcription results.
+
+    Browser sends:
+        {"type": "audio", "audio": "<base64 PCM16>"}
+        {"type": "ping"}
+
+    Server sends:
+        {"type": "status", "message": "connected", ...}
+        {"type": "transcription", "data": {...}}
+        {"type": "error", "message": "..."}
     """
-    logger.info(f"WebSocket connection established from {request.remote_addr}")
+    logger.info(f"WebSocket connection from {request.remote_addr}")
     asr = get_asr()
+
     try:
         ws.send(json.dumps({
             'type': 'status',
@@ -75,34 +123,47 @@ def transcribe_websocket(ws):
             'llm_enabled': USE_LLM
         }))
 
+        ws_url = get_lemonade_ws_url()
+        logger.info(f"Forwarding to Lemonade: {ws_url}")
+
         async def audio_stream():
             while True:
-                message = ws.receive()
+                try:
+                    message = ws.receive(timeout=30)
+                except Exception:
+                    break
                 if message is None:
                     break
-                data = json.loads(message)
-                if data.get('type') == 'audio':
-                    audio_b64 = data['audio']
-                    audio_bytes = base64.b64decode(audio_b64)
-                    yield audio_bytes
-                elif data.get('type') == 'ping':
-                    ws.send(json.dumps({'type': 'pong'}))
+                try:
+                    data = json.loads(message)
+                    if data.get('type') == 'audio':
+                        yield base64.b64decode(data['audio'])
+                    elif data.get('type') == 'ping':
+                        ws.send(json.dumps({'type': 'pong'}))
+                    elif data.get('type') == 'stop':
+                        break
+                except Exception:
+                    break
 
-        # Run the Lemonade WebSocket client in an event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            async def forward_results():
-                async for result in asr.stream_transcribe(audio_stream()):
-                    ws.send(json.dumps({
-                        'type': 'transcription',
-                        'data': result
-                    }))
-            loop.run_until_complete(forward_results())
+            async def forward():
+                async for result in asr.stream_transcribe(audio_stream(), lemonade_ws_url=ws_url):
+                    try:
+                        ws.send(json.dumps({'type': 'transcription', 'data': result}))
+                    except Exception:
+                        break
+            loop.run_until_complete(forward())
         finally:
             loop.close()
+
     except Exception as e:
-        logger.exception(f"WebSocket handler error: {e}")
+        logger.exception(f"WebSocket error: {e}")
+        try:
+            ws.send(json.dumps({'type': 'error', 'message': str(e)}))
+        except Exception:
+            pass
     finally:
         logger.info("WebSocket connection closed")
 
@@ -112,27 +173,23 @@ def transcribe_websocket(ws):
 # ---------------------------
 @app.route('/')
 def index():
-    """Serve the visual live streaming interface (default)"""
     with open(Path(__file__).parent / 'templates' / 'index_visual.html', 'r') as f:
         return render_template_string(f.read())
 
 
 @app.route('/simple')
 def simple():
-    """Serve the simple list-based interface"""
     with open(Path(__file__).parent / 'templates' / 'index.html', 'r') as f:
         return render_template_string(f.read())
 
 
 @app.route('/health')
 def health():
-    """Health check endpoint"""
     return jsonify({
         'status': 'ok',
         'time': datetime.now(timezone.utc).isoformat(),
         'storage': str(STORAGE_BASE),
         'llm_enabled': USE_LLM,
-        'mode': 'streaming'
     })
 
 
@@ -141,7 +198,6 @@ def health():
 # ---------------------------
 @app.after_request
 def set_security_headers(response):
-    """Add security headers"""
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     response.headers['Referrer-Policy'] = 'no-referrer-when-downgrade'
@@ -154,15 +210,10 @@ def set_security_headers(response):
 if __name__ == '__main__':
     logger.info('=' * 60)
     logger.info('Listenr Live Streaming Server')
-    logger.info('=' * 60)
     logger.info(f'Storage: {STORAGE_BASE}')
-    logger.info(f'LLM post-processing: {"enabled" if USE_LLM else "disabled"}')
-    logger.info(f'Mode: Continuous streaming with WebSockets')
-    logger.info(f'Starting server on {HOST}:{PORT}')
+    logger.info(f'LLM: {"enabled" if USE_LLM else "disabled"}')
+    logger.info(f'Starting on {HOST}:{PORT}')
     logger.info('=' * 60)
 
-    # Ensure storage exists
     STORAGE_BASE.mkdir(parents=True, exist_ok=True)
-
-    # Run the app
     app.run(host=HOST, port=PORT, debug=False, threaded=True)
