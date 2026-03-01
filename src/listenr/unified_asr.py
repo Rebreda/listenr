@@ -2,42 +2,17 @@
 """
 Unified ASR System - Works for both CLI and Web
 
-
 This module provides a single ASR implementation that:
 - Returns JSON responses for all transcription results
 - Works seamlessly for both command-line and web usage
 - Supports both batch (file) and streaming (real-time) modes (via Lemonade HTTP and WebSocket endpoints)
 - Includes optional LLM post-processing
 - Handles storage and metadata consistently
-
-Usage:
-    # CLI mode
-    from unified_asr import UnifiedASR
-    asr = UnifiedASR()
-    asr.start_cli()
-
-    # Web mode (process single audio)
-    asr = UnifiedASR(mode='web')
-    result = asr.process_audio(audio_data, sample_rate)
-
-    # Streaming mode (continuous)
-    asr = UnifiedASR(mode='stream')
-    asr.start_stream(callback=my_callback)
 """
 
-import os
-import sys
 import json
-import uuid
-import time
-import queue
-import threading
-import tempfile
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, List
-
 
 import numpy as np
 import soundfile as sf
@@ -45,24 +20,19 @@ import requests
 import websockets
 import asyncio
 
-# Import config manager
-import config_manager as cfg
-
-
-# Import Lemonade LLM and ASR functions
-from llm_processor import lemonade_llm_correct, lemonade_transcribe_audio
+import listenr.config_manager as cfg
+from listenr.llm_processor import lemonade_llm_correct, lemonade_transcribe_audio
 
 logger = logging.getLogger('unified_asr')
-
 
 
 # --- LemonadeUnifiedASR: Use Lemonade Server for ASR and LLM ---
 
 class LemonadeUnifiedASR:
-    """Unified ASR using Lemonade Server for both ASR and LLM"""
+    """Unified ASR using Lemonade Server for both ASR and LLM."""
+
     def __init__(self, use_llm=True):
         self.use_llm = use_llm
-        import logging
         self.logger = logging.getLogger('lemonade_unified_asr')
 
     def transcribe_and_correct(self, audio_path, whisper_model="Whisper-Tiny", llm_model="Qwen3-0.6B-GGUF", system_prompt=None):
@@ -70,7 +40,7 @@ class LemonadeUnifiedASR:
             raw_text = lemonade_transcribe_audio(audio_path, model=whisper_model)
             corrected_text = None
             if self.use_llm:
-                corrected_text = lemonade_llm_correct(raw_text, model=llm_model, system_prompt=system_prompt)
+                corrected_text = lemonade_llm_correct(raw_text, model=llm_model)
             else:
                 corrected_text = raw_text
             return {"raw_text": raw_text, "corrected_text": corrected_text}
@@ -128,10 +98,8 @@ class LemonadeUnifiedASR:
             print(f"  [DEBUG] session.update → {json.dumps(session_update)}")
 
         async with websockets.connect(lemonade_ws_url, max_size=10 * 1024 * 1024) as ws:
-            # Configure VAD via session.update (spec-defined keys only)
             await ws.send(json.dumps(session_update))
 
-            # Send audio and receive results concurrently using asyncio tasks
             result_queue: asyncio.Queue = asyncio.Queue()
 
             async def _send_audio():
@@ -143,20 +111,17 @@ class LemonadeUnifiedASR:
                         "audio": b64_audio,
                     }))
                     chunks += 1
-                # Signal end of audio stream
                 if debug:
                     print(f"  [DEBUG] Audio stream ended after {chunks} chunks, sending commit")
                 await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
                 await result_queue.put(None)  # sentinel: sender is done
 
-            # Messages always forwarded to the queue regardless of debug mode
             _ALWAYS_FORWARD = {
                 'conversation.item.input_audio_transcription.completed',
                 'conversation.item.input_audio_transcription.delta',
                 'input_audio_buffer.speech_started',
                 'error',
             }
-            # Extra messages forwarded only in debug mode
             _DEBUG_FORWARD = {
                 'session.created',
                 'session.updated',
@@ -183,12 +148,10 @@ class LemonadeUnifiedASR:
             send_task = asyncio.ensure_future(_send_audio())
             recv_task = asyncio.ensure_future(_recv_messages())
 
-            sender_done = False
             try:
                 while True:
                     item = await result_queue.get()
                     if item is None:
-                        sender_done = True
                         # Drain any remaining messages briefly after sender finishes
                         try:
                             while True:
@@ -213,14 +176,14 @@ class LemonadeUnifiedASR:
                     except (asyncio.CancelledError, Exception):
                         pass
 
+
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='Lemonade Unified ASR - CLI mode')
+    parser = argparse.ArgumentParser(description='Lemonade Unified ASR — CLI mode')
     parser.add_argument('--llm', action='store_true', help='Enable LLM post-processing')
     parser.add_argument('--audio', type=str, help='Path to audio file to transcribe')
     parser.add_argument('--whisper-model', type=str, default='Whisper-Tiny', help='Whisper model name')
     parser.add_argument('--llm-model', type=str, default='Qwen3-0.6B-GGUF', help='LLM model name')
-    parser.add_argument('--system-prompt', type=str, default=None, help='System prompt for LLM')
     args = parser.parse_args()
 
     asr = LemonadeUnifiedASR(use_llm=args.llm)
@@ -229,7 +192,6 @@ if __name__ == '__main__':
             args.audio,
             whisper_model=args.whisper_model,
             llm_model=args.llm_model,
-            system_prompt=args.system_prompt
         )
         if 'error' in result:
             print(f"Error: {result['error']}")

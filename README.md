@@ -15,11 +15,11 @@ Listenr is a privacy-first tool for collecting real-world audio and high-quality
 
 ## How It Works
 
-1. **Capture.** `listenr_cli.py` streams your microphone to Lemonade's `/realtime` WebSocket in ~85 ms chunks. Audio is captured at the device's native rate (e.g. 44100 Hz) and resampled to 16 kHz before sending.
+1. **Capture.** `listenr` streams your microphone to Lemonade's `/realtime` WebSocket in ~85 ms chunks. Audio is captured at the device's native rate and resampled to 16 kHz before sending.
 2. **VAD.** Lemonade's built-in server-side voice activity detection segments speech boundaries automatically.
 3. **Transcribe.** Lemonade runs Whisper.cpp on each speech segment and streams back interim and final transcripts.
 4. **Correct (optional).** The final transcript is sent to a local LLM via Lemonade's chat completions API. The LLM returns a cleaned transcript, an `is_improved` flag, and content `categories`.
-5. **Save.** Each utterance is saved as a `.wav` + `.json` pair and appended to `manifest.jsonl`.
+5. **Save.** Each utterance is saved as a `.wav` clip and appended to `manifest.jsonl`.
 6. **Build dataset.** `build_dataset.py` reads the manifest and writes train/dev/test CSV splits.
 
 
@@ -27,7 +27,7 @@ Listenr is a privacy-first tool for collecting real-world audio and high-quality
 ## Requirements
 
 - [Lemonade Server](https://lemonade-server.ai) running on `localhost:8000`
-- Python 3.11+ with `uv` (recommended) or `pip`
+- Python 3.13+ with `uv` (recommended) or `pip`
 - A microphone accessible via PipeWire or ALSA
 
 ## Installation
@@ -35,7 +35,20 @@ Listenr is a privacy-first tool for collecting real-world audio and high-quality
 ```bash
 git clone https://github.com/Rebreda/listenr
 cd listenr
-uv pip install -r requirements.txt
+uv pip install -e .
+```
+
+Then run commands via `uv run` (no activation needed):
+
+```bash
+uv run listenr
+```
+
+Or activate the venv once per session:
+
+```bash
+source .venv/bin/activate
+listenr
 ```
 
 ## Start Lemonade Server
@@ -52,16 +65,16 @@ Listenr will automatically call `POST /api/v1/load` on startup to load the confi
 
 ```bash
 # Record and save everything (default)
-uv run listenr_cli.py
+uv run listenr
 
 # Don't save to disk — just print transcriptions
-uv run listenr_cli.py --no-save
+uv run listenr --no-save
 
 # Also print the raw Whisper output before LLM correction
-uv run listenr_cli.py --show-raw
+uv run listenr --show-raw
 
 # Verbose debug output (WebSocket messages, mic RMS, etc.)
-uv run listenr_cli.py --debug
+uv run listenr --debug
 ```
 
 Example output:
@@ -86,19 +99,19 @@ After collecting recordings, generate train/dev/test splits from `manifest.jsonl
 
 ```bash
 # Default: 80/10/10 CSV splits in ~/listenr_dataset/
-uv run build_dataset.py
+uv run listenr-build-dataset
 
 # Custom output directory and split ratio
-uv run build_dataset.py --output ~/my_dataset --split 90/5/5
+uv run listenr-build-dataset --output ~/my_dataset --split 90/5/5
 
 # Exclude very short clips
-uv run build_dataset.py --min-duration 1.0
+uv run listenr-build-dataset --min-duration 1.0
 
 # HuggingFace datasets format
-uv run build_dataset.py --format hf
+uv run listenr-build-dataset --format hf
 
 # Preview stats without writing files
-uv run build_dataset.py --dry-run
+uv run listenr-build-dataset --dry-run
 ```
 
 Output CSV columns: `uuid`, `split`, `audio_path`, `raw_transcription`, `corrected_transcription`, `is_improved`, `categories`, `duration_s`, `sample_rate`, `whisper_model`, `llm_model`, `timestamp`.
@@ -108,10 +121,10 @@ Output CSV columns: `uuid`, `split`, `audio_path`, `raw_transcription`, `correct
 Transcribe a single audio file:
 
 ```bash
-uv run unified_asr.py --audio path/to/audio.wav --whisper-model Whisper-Large-v3-Turbo
+python -m listenr.unified_asr --audio path/to/audio.wav --whisper-model Whisper-Large-v3-Turbo
 
 # With LLM correction
-uv run unified_asr.py --llm --audio path/to/audio.wav
+python -m listenr.unified_asr --llm --audio path/to/audio.wav
 ```
 
 ## Configuration
@@ -122,7 +135,7 @@ Config is created with defaults at `~/.config/listenr/config.ini` on first run.
 ### Finding your input device
 
 ```bash
-uv run python -c "import sounddevice as sd; [print(f'{i}: {d[\"name\"]}') for i, d in enumerate(sd.query_devices()) if d['max_input_channels'] > 0]"
+python -c "import sounddevice as sd; [print(f'{i}: {d[\"name\"]}') for i, d in enumerate(sd.query_devices()) if d['max_input_channels'] > 0]"
 ```
 
 Set `input_device` to the device name (partial match works) or its index number.
@@ -152,26 +165,7 @@ jq 'select(.categories[] == "command")' ~/.listenr/audio_clips/manifest.jsonl
 python -c "import pandas as pd; df = pd.read_json('~/.listenr/audio_clips/manifest.jsonl', lines=True); print(df.head())"
 ```
 
-### Per-clip transcript JSON
-
-```json
-{
-  "uuid": "abc123",
-  "timestamp": "2026-02-28T14:30:00+00:00",
-  "audio_path": "/home/user/.listenr/audio_clips/audio/2026-02-28/clip_2026-02-28_abc123.wav",
-  "transcript_path": "/home/user/.listenr/audio_clips/transcripts/2026-02-28/transcript_2026-02-28_abc123.json",
-  "raw_transcription": "im going to the store two buy some milk",
-  "corrected_transcription": "I'm going to the store to buy some milk.",
-  "is_improved": true,
-  "categories": ["dictation"],
-  "whisper_model": "Whisper-Large-v3-Turbo",
-  "llm_model": "gpt-oss-20b-mxfp4-GGUF",
-  "duration_s": 2.4,
-  "sample_rate": 16000
-}
-```
-
-## Troubleshooting
+### manifest.jsonl
 
 **No transcriptions appear / `[SAVE SKIPPED] pcm_buffer is empty`**
 - Check that Lemonade is running: `curl http://localhost:8000/api/v1/health`

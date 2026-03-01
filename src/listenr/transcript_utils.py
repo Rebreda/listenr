@@ -76,7 +76,6 @@ def strip_noise_tags(text: str) -> str:
     ""
     """
     cleaned = _INLINE_TAG_RE.sub('', text)
-    # Collapse newlines and runs of spaces left behind by removed tags
     cleaned = re.sub(r'\n+', ' ', cleaned)
     cleaned = re.sub(r' {2,}', ' ', cleaned)
     return cleaned.strip()
@@ -104,7 +103,6 @@ def clean_transcript(text: str) -> tuple[str | None, str]:
     stripped = strip_noise_tags(text)
 
     if not stripped:
-        # Stripping removed everything — was all noise tags
         return ('drop', text)
 
     if stripped != text.strip():

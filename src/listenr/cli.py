@@ -4,44 +4,46 @@ Listenr CLI: Real-time Microphone Streaming to Lemonade ASR
 
 Streams microphone to Lemonade's /realtime WebSocket endpoint.
 Prints transcriptions as they arrive. Saves audio + transcripts for dataset use.
-All config loaded from config_manager.py.
+All config loaded from config_manager.
 
 Usage:
-    uv run listenr_cli.py
-    uv run listenr_cli.py --no-save       # Don't save recordings
-    uv run listenr_cli.py --show-raw      # Show raw Whisper transcription too
+    listenr
+    listenr --no-save       # Don't save recordings
+    listenr --show-raw      # Show raw Whisper transcription too
+    listenr --debug         # Verbose debug output
 """
 
 import asyncio
 import logging
 import argparse
+import json
 import requests
 import numpy as np
 import sounddevice as sd
+from collections import deque
 from math import gcd
 from scipy.signal import resample_poly
 from pathlib import Path
 
-from unified_asr import LemonadeUnifiedASR
-from llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
-from transcript_utils import is_hallucination, strip_noise_tags
-from storage import save_recording
-import config_manager as cfg
+from listenr.unified_asr import LemonadeUnifiedASR
+from listenr.llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
+from listenr.transcript_utils import is_hallucination, strip_noise_tags
+from listenr.storage import save_recording
+import listenr.config_manager as cfg
 
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
-log = logging.getLogger('listenr_cli')
+log = logging.getLogger('listenr.cli')
 
 # Audio settings from config
-CAPTURE_RATE = cfg.get_int_setting('Audio', 'sample_rate', 16000)  # mic capture rate
+CAPTURE_RATE = cfg.get_int_setting('Audio', 'sample_rate', 16000)
 ASR_RATE = 16000  # Lemonade /realtime always requires 16kHz PCM16
 CHUNK_SIZE = cfg.get_int_setting('Audio', 'blocksize', 1360)
-SAMPLE_RATE = CAPTURE_RATE  # kept for backward compat (save_recording uses ASR_RATE directly)
 CHANNELS = cfg.get_int_setting('Audio', 'channels', 1)
 INPUT_DEVICE = cfg.get_setting('Audio', 'input_device', 'default') or None
 if INPUT_DEVICE == 'default':
     INPUT_DEVICE = None
 
-# Compute resample ratio once (e.g. 44100→16000 = up 160, down 441)
+# Compute resample ratio once (e.g. 48000→16000 = up 1, down 3)
 _gcd = gcd(CAPTURE_RATE, ASR_RATE)
 _RESAMPLE_UP = ASR_RATE // _gcd
 _RESAMPLE_DOWN = CAPTURE_RATE // _gcd
@@ -104,12 +106,9 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
     """Async generator yielding 16kHz PCM16 bytes from mic, also buffering for saving.
 
     Captures at CAPTURE_RATE (from config) and resamples to ASR_RATE (16kHz) if needed.
-    PipeWire and most USB mics require their native rate (e.g. 44100Hz); Lemonade always
-    expects 16kHz PCM16, so we resample here before sending.
-
-    stream.read() is a blocking call (~85ms per chunk). We offload it to a thread pool
-    executor so it never blocks the asyncio event loop — otherwise _recv_messages in
-    stream_transcribe would never get a turn to process incoming WebSocket messages.
+    stream.read() is offloaded to a thread pool executor so it never blocks the asyncio
+    event loop — otherwise _recv_messages would never get a turn to process incoming
+    WebSocket messages.
     """
     loop = asyncio.get_event_loop()
     chunks_sent = 0
@@ -126,29 +125,25 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
                   f"blocksize={CHUNK_SIZE} (~{CHUNK_SIZE/CAPTURE_RATE*1000:.0f}ms/chunk), "
                   f"device={stream.device}")
         while True:
-            # Run the blocking read in a thread so the event loop stays free
             audio_chunk, overflowed = await loop.run_in_executor(
                 None, stream.read, CHUNK_SIZE
             )
             if overflowed and debug:
                 print("  [DEBUG] WARNING: Mic buffer overflowed (CPU too slow?)")
-            # audio_chunk shape: (blocksize, channels) — squeeze to 1D mono
             mono = audio_chunk[:, 0] if audio_chunk.ndim > 1 else audio_chunk
             rms = float(np.sqrt(np.mean(mono ** 2)))
-            # Resample to 16kHz if capture rate differs
             if _NEED_RESAMPLE:
                 mono = resample_poly(mono, _RESAMPLE_UP, _RESAMPLE_DOWN).astype(np.float32)
-            # Convert float32 [-1, 1] → int16 PCM, little-endian bytes
             pcm16 = (np.clip(mono, -1.0, 1.0) * 32767.0).astype('<i2').tobytes()
             pcm_buffer.append(pcm16)
             chunks_sent += 1
-            if debug and chunks_sent % 24 == 0:  # print every ~2 seconds
+            if debug and chunks_sent % 24 == 0:
                 print(f"  [DEBUG] Mic: {chunks_sent} chunks sent, RMS={rms:.4f}, "
                       f"pcm16_bytes={len(pcm16)}", flush=True)
             yield pcm16
 
 
-async def main(save: bool, show_raw: bool, debug: bool):
+async def _run(save: bool, show_raw: bool, debug: bool):
     ensure_models_loaded(debug=debug)
     ws_url = get_lemonade_ws_url()
     ws_url_with_model = f"{ws_url}?model={WHISPER_MODEL}"
@@ -161,16 +156,17 @@ async def main(save: bool, show_raw: bool, debug: bool):
     print("   Press Ctrl+C to stop.\n")
 
     if debug:
-        # Raise log level for websockets library too
-        logging.getLogger('listenr_cli').setLevel(logging.DEBUG)
+        logging.getLogger('listenr.cli').setLevel(logging.DEBUG)
         logging.getLogger('unified_asr').setLevel(logging.DEBUG)
         logging.getLogger('lemonade_unified_asr').setLevel(logging.DEBUG)
         logging.getLogger('websockets').setLevel(logging.INFO)
         logging.root.setLevel(logging.DEBUG)
 
-    asr = LemonadeUnifiedASR(use_llm=False)  # We handle LLM correction ourselves for saving
+    asr = LemonadeUnifiedASR(use_llm=False)  # LLM correction handled here for saving
     pcm_buffer: list = []
-    pending_raw: list = []  # buffer of raw texts in current speech segment
+    # Rolling window of (raw, corrected) pairs passed as context to the LLM
+    _context_size = cfg.get_int_setting('LLM', 'context_window', 3)
+    llm_context: deque[tuple[str, str]] = deque(maxlen=_context_size)
 
     async for result in asr.stream_transcribe(
         mic_stream(pcm_buffer, debug=debug),
@@ -185,20 +181,18 @@ async def main(save: bool, show_raw: bool, debug: bool):
             'input_audio_buffer.speech_started',
             'error',
         ):
-            print(f"  [DEBUG] ← {msg_type}: {json.dumps(result)}", flush=True)
+            print(f"  [DEBUG] <- {msg_type}: {json.dumps(result)}", flush=True)
 
         if msg_type == 'conversation.item.input_audio_transcription.delta':
-            # Interim result — print in-place so the line updates as Whisper refines it
             interim = result.get('transcript', '').strip()
             if interim:
-                print(f"\r  [ASR] {interim} …", end='', flush=True)
+                print(f"\r  [ASR] {interim} ...", end='', flush=True)
 
         elif msg_type == 'conversation.item.input_audio_transcription.completed':
             raw_text = result.get('transcript', '').strip()
             if not raw_text:
                 continue
 
-            # ── Hallucination / noise filtering ──────────────────────────────
             if is_hallucination(raw_text):
                 print('\r' + ' ' * 80 + '\r', end='', flush=True)
                 if debug:
@@ -216,9 +210,7 @@ async def main(save: bool, show_raw: bool, debug: bool):
             if stripped_text != raw_text and debug:
                 print(f"  [DEBUG] noise tags stripped: {raw_text!r} -> {stripped_text!r}", flush=True)
             raw_text = stripped_text
-            # ─────────────────────────────────────────────────────────────────
 
-            # Clear the interim line
             print('\r' + ' ' * 80 + '\r', end='', flush=True)
 
             corrected_text = raw_text
@@ -226,12 +218,19 @@ async def main(save: bool, show_raw: bool, debug: bool):
             categories: list = []
 
             if USE_LLM:
-                llm_result = lemonade_llm_correct(raw_text, model=LLM_MODEL)
+                llm_result = lemonade_llm_correct(
+                    raw_text,
+                    model=LLM_MODEL,
+                    recent_context=list(llm_context),
+                )
                 corrected_text = llm_result['corrected']
                 is_improved = llm_result['is_improved']
                 categories = llm_result.get('categories', [])
                 if 'error' in llm_result and debug:
                     print(f"  WARNING: LLM error: {llm_result['error']}")
+
+            # Add to context window regardless of whether LLM was used
+            llm_context.append((raw_text, corrected_text))
 
             if show_raw and is_improved:
                 print(f"  [RAW] {raw_text}")
@@ -257,13 +256,13 @@ async def main(save: bool, show_raw: bool, debug: bool):
         elif msg_type == 'input_audio_buffer.speech_started':
             if debug:
                 print(f"  [DEBUG] speech_started -- clearing pcm_buffer (had {len(pcm_buffer)} chunks)", flush=True)
-            pcm_buffer.clear()  # start fresh buffer for this segment
+            pcm_buffer.clear()
 
         elif msg_type == 'error':
             print(f"  ERROR: {result.get('message', result)}")
 
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Listenr CLI — real-time ASR via Lemonade')
     parser.add_argument('--no-save', action='store_true', help='Do not save recordings to disk')
     parser.add_argument('--show-raw', action='store_true', help='Show raw Whisper transcription')
@@ -271,7 +270,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     try:
-        asyncio.run(main(save=not args.no_save, show_raw=args.show_raw, debug=args.debug))
+        asyncio.run(_run(save=not args.no_save, show_raw=args.show_raw, debug=args.debug))
     except KeyboardInterrupt:
         print("\nUnloading models from Lemonade...", flush=True)
         result = lemonade_unload_models()
@@ -280,3 +279,7 @@ if __name__ == '__main__':
         else:
             print(f"  Models unloaded.")
         print("Stopped.")
+
+
+if __name__ == '__main__':
+    main()

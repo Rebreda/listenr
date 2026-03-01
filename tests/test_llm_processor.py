@@ -4,7 +4,7 @@ Run with:  python -m pytest tests/
 """
 
 import pytest
-from llm_processor import _parse_llm_correction
+from listenr.llm_processor import _parse_llm_correction
 
 
 ORIGINAL = 'yeah tell me uh a joke'
