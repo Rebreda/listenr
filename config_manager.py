@@ -16,16 +16,17 @@ DEFAULT_CONFIG = {
     },
     'Whisper': {
         # Whisper model name served by Lemonade (whisper.cpp backend).
-        # Available models: Whisper-Tiny, Whisper-Large-v3-Turbo
-        'model': 'Whisper-Large-v3-Turbo',
+        # Available: Whisper-Tiny, Whisper-Large-v3-Turbo
+        'model': 'Whisper-Tiny',
     },
     'Audio': {
-        # Lemonade /realtime requires exactly: 16kHz, mono, PCM16
-        'sample_rate': '16000',
+        # Mic capture rate — use the device's native rate (e.g. 44100 for PipeWire/USB mics).
+        # listenr_cli.py resamples to 16kHz internally before sending to Lemonade /realtime.
+        'sample_rate': '44100',
         'channels': '1',
-        # Chunk size in frames per mic read. ~85ms at 16kHz = 1360 frames (spec recommendation)
-        'blocksize': '1360',
-        'input_device': 'default',  # 'default' or device index number
+        # Chunk size in frames per mic read. ~85ms at 44100Hz = 3749 frames
+        'blocksize': '3749',
+        'input_device': 'pipewire',  # 'pipewire', device name, index, or 'default'
     },
     'Storage': {
         'audio_clips_enabled': 'true',
@@ -134,13 +135,6 @@ def load_config():
         get_float_setting('VAD', 'threshold')
         get_int_setting('VAD', 'silence_duration_ms')
         get_int_setting('VAD', 'prefix_padding_ms')
-
-        sr = get_int_setting('Audio', 'sample_rate')
-        if sr != 16000:
-            logging.warning(
-                f"Lemonade /realtime requires 16kHz audio; configured sample_rate={sr}. "
-                "Override in [Audio] sample_rate."
-            )
 
     except ValueError as e:
         print(f"ERROR: Config file has invalid number format: {e}", file=sys.stderr)

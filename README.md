@@ -172,8 +172,8 @@ Config is stored at `~/.config/listenr/config.ini` and created with defaults on 
 api_base = http://localhost:8000/api/v1
 
 [Whisper]
-# Lemonade whisper.cpp backend: Whisper-Tiny, Whisper-Base, Whisper-Small
-model = Whisper-Small
+# Available: Whisper-Tiny, Whisper-Large-v3-Turbo
+model = Whisper-Large-v3-Turbo
 
 [Audio]
 # Lemonade /realtime requires 16kHz mono PCM16 — do not change sample_rate or channels
@@ -191,7 +191,7 @@ prefix_padding_ms = 250   # Minimum speech (ms) before transcription triggers
 
 [LLM]
 enabled = true
-model = Qwen3-0.6B-GGUF   # Must be loaded in Lemonade
+model = gpt-oss-20b-mxfp4-GGUF   # Must be loaded in Lemonade
 api_base = http://localhost:8000/api/v1
 temperature = 0.3
 max_tokens = 150
@@ -252,10 +252,14 @@ Each transcript JSON:
 **`Could not discover Lemonade websocket port`**
 Lemonade Server is not running or not reachable on port 8000. Start it with `lemonade-server serve` and check `GET http://localhost:8000/api/v1/health`.
 
+**`Could not discover Lemonade websocket port`**
+Lemonade Server is not running or not reachable on port 8000. Start it with `lemonade-server serve` and check `GET http://localhost:8000/api/v1/health`.
+
 **No transcriptions appear**
-- Confirm the Whisper model is loaded: `GET http://localhost:8000/api/v1/models`
+- Confirm the Whisper model is loaded — Listenr calls `POST /api/v1/load` automatically on startup, but check for errors in the terminal output
+- List available models: `curl http://localhost:8000/api/v1/models | python3 -c "import sys,json; [print(m['id']) for m in json.load(sys.stdin)['data']]"`
 - Lower `threshold` in `[VAD]` if your mic input is quiet
-- Try `--show-raw` to see if raw Whisper output is coming through
+- Try `--debug` to see all WebSocket messages from Lemonade
 
 **LLM correction not working**
 - Check `LLM.enabled = true` in config

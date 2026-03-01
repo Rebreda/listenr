@@ -78,13 +78,14 @@ class LemonadeUnifiedASR:
             self.logger.error(f"Transcription or LLM correction failed: {e}")
             return {"error": str(e)}
 
-    async def stream_transcribe(self, audio_stream, whisper_model=None, on_result=None, lemonade_ws_url=None):
+    async def stream_transcribe(self, audio_stream, whisper_model=None, on_result=None, lemonade_ws_url=None, debug=False):
         """
         Stream audio to Lemonade's /realtime WebSocket endpoint and yield transcriptions.
 
         audio_stream: async generator yielding raw PCM16 bytes chunks (16kHz, mono)
         on_result: optional callback for each result dict
         lemonade_ws_url: full WebSocket URL including ?model= param (overrides config)
+        debug: if True, all server messages are yielded (not just transcriptions/errors)
 
         Lemonade /realtime protocol:
           Client → Server:
@@ -101,7 +102,7 @@ class LemonadeUnifiedASR:
         import base64
 
         if whisper_model is None:
-            whisper_model = cfg.get_setting('Whisper', 'model', 'Whisper-Small')
+            whisper_model = cfg.get_setting('Whisper', 'model', 'Whisper-Large-v3-Turbo')
         if lemonade_ws_url is None:
             api_base = cfg.get_setting('LLM', 'api_base', 'http://localhost:8000/api/v1') or 'http://localhost:8000/api/v1'
             try:
@@ -111,46 +112,73 @@ class LemonadeUnifiedASR:
                 ws_port = 8001
             lemonade_ws_url = f"ws://localhost:{ws_port}/realtime?model={whisper_model}"
 
+        session_update = {
+            "type": "session.update",
+            "session": {
+                "model": whisper_model,
+                "turn_detection": {
+                    "threshold": cfg.get_float_setting('VAD', 'threshold', 0.01),
+                    "silence_duration_ms": cfg.get_int_setting('VAD', 'silence_duration_ms', 800),
+                    "prefix_padding_ms": cfg.get_int_setting('VAD', 'prefix_padding_ms', 250),
+                },
+            },
+        }
+        if debug:
+            print(f"  [DEBUG] Connecting to {lemonade_ws_url}")
+            print(f"  [DEBUG] session.update → {json.dumps(session_update)}")
+
         async with websockets.connect(lemonade_ws_url, max_size=10 * 1024 * 1024) as ws:
             # Configure VAD via session.update (spec-defined keys only)
-            await ws.send(json.dumps({
-                "type": "session.update",
-                "session": {
-                    "model": whisper_model,
-                    "turn_detection": {
-                        "threshold": cfg.get_float_setting('VAD', 'threshold', 0.01),
-                        "silence_duration_ms": cfg.get_int_setting('VAD', 'silence_duration_ms', 800),
-                        "prefix_padding_ms": cfg.get_int_setting('VAD', 'prefix_padding_ms', 250),
-                    },
-                },
-            }))
+            await ws.send(json.dumps(session_update))
 
             # Send audio and receive results concurrently using asyncio tasks
             result_queue: asyncio.Queue = asyncio.Queue()
 
             async def _send_audio():
+                chunks = 0
                 async for chunk in audio_stream:
                     b64_audio = base64.b64encode(chunk).decode('utf-8')
                     await ws.send(json.dumps({
                         "type": "input_audio_buffer.append",
                         "audio": b64_audio,
                     }))
+                    chunks += 1
                 # Signal end of audio stream
+                if debug:
+                    print(f"  [DEBUG] Audio stream ended after {chunks} chunks, sending commit")
                 await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
                 await result_queue.put(None)  # sentinel: sender is done
+
+            # Messages always forwarded to the queue regardless of debug mode
+            _ALWAYS_FORWARD = {
+                'conversation.item.input_audio_transcription.completed',
+                'conversation.item.input_audio_transcription.delta',
+                'input_audio_buffer.speech_started',
+                'error',
+            }
+            # Extra messages forwarded only in debug mode
+            _DEBUG_FORWARD = {
+                'session.created',
+                'session.updated',
+                'input_audio_buffer.speech_stopped',
+                'input_audio_buffer.committed',
+                'input_audio_buffer.cleared',
+            }
 
             async def _recv_messages():
                 async for raw in ws:
                     msg = json.loads(raw)
                     msg_type = msg.get('type', '')
-                    if msg_type in (
-                        'conversation.item.input_audio_transcription.completed',
-                        'input_audio_buffer.speech_started',
-                        'error',
-                    ):
+                    if msg_type in _ALWAYS_FORWARD:
+                        await result_queue.put(msg)
+                    elif debug and msg_type in _DEBUG_FORWARD:
                         await result_queue.put(msg)
                     elif msg_type in ('response.done', 'session.closed'):
+                        if debug:
+                            print(f"  [DEBUG] WS closed by server: {msg_type}")
                         break
+                    elif debug:
+                        print(f"  [DEBUG] Ignored message type: {msg_type}")
 
             send_task = asyncio.ensure_future(_send_audio())
             recv_task = asyncio.ensure_future(_recv_messages())

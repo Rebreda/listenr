@@ -16,6 +16,7 @@ websockets
 sounddevice==0.5.1
 soundfile==0.13.1
 numpy==2.2.5
+scipy
 
 # Utilities
 click==8.3.0
