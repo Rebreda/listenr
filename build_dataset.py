@@ -1,0 +1,345 @@
+#!/usr/bin/env python3
+"""
+build_dataset.py — Build train/dev/test splits from Listenr recordings.
+
+Reads all transcript JSON files saved by listenr_cli.py, filters/validates
+entries, and writes CSV (and optionally HuggingFace datasets) split files.
+
+Usage:
+    uv run build_dataset.py [options]
+
+Examples:
+    # Default: 80/10/10 split, CSV output in ./dataset/
+    uv run build_dataset.py
+
+    # Custom output directory and split ratio
+    uv run build_dataset.py --output ~/my_dataset --split 90/5/5
+
+    # Only include clips longer than 1 second, HuggingFace format
+    uv run build_dataset.py --min-duration 1.0 --format hf
+
+    # Preview without writing files
+    uv run build_dataset.py --dry-run
+"""
+
+import argparse
+import csv
+import json
+import logging
+import os
+import random
+import sys
+from pathlib import Path
+
+import config_manager as cfg
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger("build_dataset")
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+DEFAULT_OUTPUT = Path("~/listenr_dataset").expanduser()
+DEFAULT_SPLIT = "80/10/10"
+DEFAULT_MIN_DURATION = 0.3  # seconds
+DEFAULT_MIN_CHARS = 2  # minimum non-whitespace chars in transcription
+
+CSV_COLUMNS = [
+    "uuid",
+    "split",
+    "audio_path",
+    "raw_transcription",
+    "corrected_transcription",
+    "is_improved",
+    "duration_s",
+    "sample_rate",
+    "whisper_model",
+    "llm_model",
+    "timestamp",
+]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _transcripts_root() -> Path:
+    """Return the transcripts root directory from config."""
+    clips_path = cfg.get_setting("Storage", "audio_clips_path", "~/.listenr/audio_clips")
+    # Transcripts live next to audio_clips: ~/.listenr/transcripts
+    base = Path(clips_path).expanduser().parent
+    return base / "transcripts"
+
+
+def discover_transcripts(transcripts_root: Path) -> list[Path]:
+    """Recursively find all transcript JSON files under transcripts_root."""
+    if not transcripts_root.exists():
+        logger.warning(f"Transcripts directory not found: {transcripts_root}")
+        return []
+    return sorted(transcripts_root.rglob("*.json"))
+
+
+def load_and_validate(
+    json_path: Path,
+    min_duration: float,
+    min_chars: int,
+) -> dict | None:
+    """Load a single transcript JSON; return None if it fails validation."""
+    try:
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug(f"Skipping {json_path}: {e}")
+        return None
+
+    # Required fields
+    for field in ("uuid", "raw_transcription", "audio_path"):
+        if not data.get(field):
+            logger.debug(f"Skipping {json_path}: missing field '{field}'")
+            return None
+
+    # Duration check
+    duration = float(data.get("duration_s") or 0.0)
+    if duration < min_duration:
+        logger.debug(f"Skipping {json_path}: duration {duration:.2f}s < {min_duration}s")
+        return None
+
+    # Transcription content check (prefer corrected, fall back to raw)
+    transcript = (data.get("corrected_transcription") or data.get("raw_transcription") or "").strip()
+    if len(transcript.replace(" ", "")) < min_chars:
+        logger.debug(f"Skipping {json_path}: transcript too short")
+        return None
+
+    # Verify audio file exists
+    audio_path = Path(data["audio_path"]).expanduser()
+    if not audio_path.exists():
+        logger.debug(f"Skipping {json_path}: audio file missing at {audio_path}")
+        return None
+
+    return {
+        "uuid": data.get("uuid", ""),
+        "audio_path": str(audio_path.resolve()),
+        "raw_transcription": data.get("raw_transcription", ""),
+        "corrected_transcription": data.get("corrected_transcription") or data.get("raw_transcription", ""),
+        "is_improved": str(data.get("is_improved", False)).lower() == "true",
+        "duration_s": duration,
+        "sample_rate": int(data.get("sample_rate") or 16000),
+        "whisper_model": data.get("whisper_model", ""),
+        "llm_model": data.get("llm_model", ""),
+        "timestamp": data.get("timestamp", ""),
+    }
+
+
+def parse_split(split_str: str) -> tuple[float, float, float]:
+    """Parse 'train/dev/test' percentage string into floats that sum to 1.0."""
+    parts = split_str.split("/")
+    if len(parts) != 3:
+        raise ValueError(f"Split must be in format TRAIN/DEV/TEST, got: {split_str!r}")
+    values = [float(p) for p in parts]
+    total = sum(values)
+    if total <= 0:
+        raise ValueError("Split values must sum to a positive number")
+    return tuple(v / total for v in values)  # type: ignore[return-value]
+
+
+def assign_splits(
+    entries: list[dict],
+    train_frac: float,
+    dev_frac: float,
+    seed: int = 42,
+) -> list[dict]:
+    """Shuffle entries and assign split labels in-place."""
+    rng = random.Random(seed)
+    shuffled = entries[:]
+    rng.shuffle(shuffled)
+    n = len(shuffled)
+    train_end = int(n * train_frac)
+    dev_end = train_end + int(n * dev_frac)
+    for i, entry in enumerate(shuffled):
+        if i < train_end:
+            entry["split"] = "train"
+        elif i < dev_end:
+            entry["split"] = "dev"
+        else:
+            entry["split"] = "test"
+    return shuffled
+
+
+def write_csv(entries: list[dict], output_dir: Path, split: str) -> Path:
+    """Write entries for a single split to CSV."""
+    split_entries = [e for e in entries if e["split"] == split]
+    out_path = output_dir / f"{split}.csv"
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(split_entries)
+    return out_path
+
+
+def write_hf_dataset(entries: list[dict], output_dir: Path) -> None:
+    """Write a HuggingFace DatasetDict to output_dir (requires 'datasets' package)."""
+    try:
+        from datasets import Dataset, DatasetDict, Audio as HFAudio  # type: ignore
+    except ImportError:
+        logger.error(
+            "The 'datasets' package is required for HuggingFace format. "
+            "Install it with: uv pip install datasets"
+        )
+        sys.exit(1)
+
+    splits_dict: dict[str, list[dict]] = {"train": [], "dev": [], "test": []}
+    for e in entries:
+        splits_dict[e["split"]].append(e)
+
+    hf_splits = {}
+    for split_name, split_entries in splits_dict.items():
+        if not split_entries:
+            continue
+        ds = Dataset.from_list(split_entries)
+        ds = ds.cast_column("audio_path", HFAudio(sampling_rate=16000))
+        hf_splits[split_name] = ds
+
+    dd = DatasetDict(hf_splits)
+    dd.save_to_disk(str(output_dir / "hf_dataset"))
+    logger.info(f"HuggingFace dataset saved to {output_dir / 'hf_dataset'}")
+
+
+def print_stats(entries: list[dict]) -> None:
+    """Print a summary of the dataset."""
+    total = len(entries)
+    if total == 0:
+        logger.info("No valid entries.")
+        return
+    split_counts = {}
+    for e in entries:
+        split_counts[e["split"]] = split_counts.get(e["split"], 0) + 1
+    total_dur = sum(e["duration_s"] for e in entries)
+    improved = sum(1 for e in entries if e["is_improved"])
+    models = {e["whisper_model"] for e in entries if e["whisper_model"]}
+
+    print("\n─────────── Dataset Summary ───────────")
+    print(f"  Total utterances : {total:,}")
+    print(f"  Total duration   : {total_dur / 60:.1f} minutes ({total_dur:.0f}s)")
+    print(f"  LLM improved     : {improved:,} ({100 * improved / total:.1f}%)")
+    print(f"  Whisper models   : {', '.join(sorted(models)) or 'unknown'}")
+    print(f"  Splits           :", end="")
+    for s in ("train", "dev", "test"):
+        n = split_counts.get(s, 0)
+        print(f"  {s}={n}", end="")
+    print()
+    print("────────────────────────────────────────\n")
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    cfg.load_config()
+
+    parser = argparse.ArgumentParser(
+        description="Build train/dev/test dataset splits from Listenr recordings."
+    )
+    parser.add_argument(
+        "--transcripts",
+        type=Path,
+        default=None,
+        help="Root directory containing transcript JSON files (default: from config)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=DEFAULT_OUTPUT,
+        help=f"Output directory for dataset files (default: {DEFAULT_OUTPUT})",
+    )
+    parser.add_argument(
+        "--split",
+        default=DEFAULT_SPLIT,
+        help=f"Train/dev/test split percentages, e.g. 80/10/10 (default: {DEFAULT_SPLIT})",
+    )
+    parser.add_argument(
+        "--min-duration",
+        type=float,
+        default=DEFAULT_MIN_DURATION,
+        help=f"Minimum clip duration in seconds (default: {DEFAULT_MIN_DURATION})",
+    )
+    parser.add_argument(
+        "--min-chars",
+        type=int,
+        default=DEFAULT_MIN_CHARS,
+        help=f"Minimum non-whitespace chars in transcription (default: {DEFAULT_MIN_CHARS})",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducible splits (default: 42)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["csv", "hf", "both"],
+        default="csv",
+        help="Output format: csv, hf (HuggingFace datasets), or both (default: csv)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print stats and exit without writing files",
+    )
+    args = parser.parse_args()
+
+    # Resolve directories
+    transcripts_root = args.transcripts or _transcripts_root()
+    output_dir = Path(args.output).expanduser()
+
+    # Parse split ratios
+    try:
+        train_frac, dev_frac, _test_frac = parse_split(args.split)
+    except ValueError as e:
+        logger.error(f"Invalid --split value: {e}")
+        sys.exit(1)
+
+    # Discover and load transcripts
+    json_paths = discover_transcripts(transcripts_root)
+    logger.info(f"Found {len(json_paths)} JSON files in {transcripts_root}")
+
+    entries = []
+    skipped = 0
+    for p in json_paths:
+        entry = load_and_validate(p, args.min_duration, args.min_chars)
+        if entry:
+            entries.append(entry)
+        else:
+            skipped += 1
+
+    logger.info(f"Valid entries: {len(entries)}, skipped: {skipped}")
+
+    if not entries:
+        logger.error("No valid entries found. Check your recordings directory.")
+        sys.exit(1)
+
+    # Assign splits
+    entries = assign_splits(entries, train_frac, dev_frac, seed=args.seed)
+    print_stats(entries)
+
+    if args.dry_run:
+        logger.info("Dry run — no files written.")
+        return
+
+    # Write output
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.format in ("csv", "both"):
+        for split_name in ("train", "dev", "test"):
+            out_path = write_csv(entries, output_dir, split_name)
+            n = sum(1 for e in entries if e["split"] == split_name)
+            logger.info(f"Wrote {n:,} entries → {out_path}")
+
+    if args.format in ("hf", "both"):
+        write_hf_dataset(entries, output_dir)
+
+    logger.info(f"Dataset written to {output_dir}")
+
+
+if __name__ == "__main__":
+    main()

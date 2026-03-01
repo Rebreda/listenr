@@ -9,61 +9,56 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
 
 # Define defaults
 DEFAULT_CONFIG = {
+    'Lemonade': {
+        # HTTP API base for Lemonade Server (LLM, ASR batch, health)
+        # The /realtime WebSocket port is discovered dynamically via GET /api/v1/health -> websocket_port
+        'api_base': 'http://localhost:8000/api/v1',
+    },
     'Whisper': {
-        'model_size': 'medium.en',  # Use a more capable model
-        'device': 'cpu',
-        'compute_type': 'int8',  # int8 for CPU, float16 for GPU
-        'beam_size': '7',  # More beams = better decoding
-        'best_of': '7',
-        'temperature': '0.0',
-        'condition_on_previous_text': 'true',  # Better context for longer speech
-        'vad_filter': 'true',  # Remove silence in Whisper processing
-        # Adjust VAD parameters to better align with 30s chunks
-        'vad_parameters': '{"threshold": 0.5, "min_speech_duration_ms": 2000, "max_speech_duration_s": 30}',
+        # Whisper model name served by Lemonade (whisper.cpp backend).
+        # Available: Whisper-Tiny, Whisper-Large-v3-Turbo
+        'model': 'Whisper-Tiny',
     },
     'Audio': {
-        'sample_rate': '16000',
+        # Mic capture rate — use the device's native rate (e.g. 44100 for PipeWire/USB mics).
+        # listenr_cli.py resamples to 16kHz internally before sending to Lemonade /realtime.
+        'sample_rate': '44100',
         'channels': '1',
-        'blocksize': '2048',
-        'input_device': 'default',  # 'default' or device number
-        'leading_silence_s': '0.5',  # Give more pre-context
-        'trailing_silence_s': '0.7',  # More context after speech
-        'max_recording_duration_s': '30',  # Maximum length of a single recording
+        # Chunk size in frames per mic read. ~85ms at 44100Hz = 3749 frames
+        'blocksize': '3749',
+        'input_device': 'pipewire',  # 'pipewire', device name, index, or 'default'
     },
     'Storage': {
         'audio_clips_enabled': 'true',
         'audio_clips_path': '~/.listenr/audio_clips',
         'retention_days': '90',
         'max_storage_gb': '10',
-        'clip_format': 'wav',  # wav, flac, mp3 (mp3 requires external encoder)
-        'clip_quality': '16000',  # Target sample rate for saved clips
+        'clip_format': 'wav',
     },
     'VAD': {
-        'speech_threshold': '0.35',  # Lower = more sensitive (better for continuous speech)
-        'min_speech_duration_s': '0.4',  # Minimum speech to process
-        'max_silence_duration_s': '1.7',  # Wait longer before cutting off (for pauses between sentences)
-        'vad_chunk_size': '512',  # For 16kHz, Silero expects 512
-        'patience_chunks': '12',  # Extra chunks to wait after speech ends
+        # Server-side VAD settings sent via session.update on the /realtime WebSocket.
+        # All VAD processing happens in Lemonade; these are passed through as-is.
+        # threshold: RMS energy threshold for speech detection (raise to ignore background noise)
+        'threshold': '0.05',
+        # silence_duration_ms: ms of silence to trigger speech end and transcription
+        'silence_duration_ms': '800',
+        # prefix_padding_ms: minimum speech duration (ms) before triggering transcription
+        'prefix_padding_ms': '250',
     },
     'LLM': {
-        'enabled': 'false',  # Enable LLM post-processing
-        'provider': 'ollama',
-        'model': 'gemma3:4b-it-qat',  # Ollama model to use
-        'ollama_host': 'http://localhost:11434',  # Ollama API endpoint
-        'temperature': '0.3',  # Low temperature for consistency
-        'context_window': '5',  # Number of previous transcriptions to use as context
-        'max_tokens': '150',  # Maximum tokens to generate
-        'timeout': '10',  # API timeout in seconds
-        'correction_types': 'punctuation,capitalization,grammar,homophone,numeric,spacing',
-        'correction_threshold': '0.7',
-        'fallback_processing': 'true',
+        'enabled': 'true',  # Enable LLM post-processing of transcriptions
+        'model': 'gpt-oss-20b-mxfp4-GGUF',  # LLM model name (must be loaded in Lemonade)
+        'api_base': 'http://localhost:8000/api/v1',  # Lemonade Server API base
+        'temperature': '0.3',
+        'max_tokens': '150',
+        'timeout': '10',
     },
     'Output': {
-        'file': '~/transcripts_raw.txt',  # Empty means console only
-        'llm_file': '~/transcripts_clean.txt',  # Separate file for LLM-processed output
-        'format': '[{timestamp}] {text}',  # Output format
-        'timestamp_format': '%%Y-%%m-%%d %%H:%%M:%%S',  # Double %% for escaping
-        'show_raw': 'false',  # Show raw transcriptions when LLM is enabled
+        'file': '~/transcripts_raw.txt',
+        'llm_file': '~/transcripts_clean.txt',
+        'format': '[{timestamp}] {text}',
+        'timestamp_format': '%%Y-%%m-%%d %%H:%%M:%%S',  # Double %% for configparser escaping
+        'show_raw': 'false',
     },
     'Logging': {
         'level': 'INFO',  # DEBUG, INFO, WARNING, ERROR
@@ -99,7 +94,8 @@ def load_config():
             with open(CONFIG_FILE, 'w') as configfile:
                 # Write header comment
                 configfile.write(f"# {APP_NAME} Configuration File\n")
-                configfile.write("# Edit this file to customize ASR settings\n\n")
+                configfile.write("# Edit this file to customize ASR settings\n")
+                configfile.write("# Lemonade Server: https://lemonade-server.ai\n\n")
                 
                 for section in config.sections():
                     configfile.write(f"[{section}]\n")
@@ -135,20 +131,10 @@ def load_config():
     try:
         get_int_setting('Audio', 'sample_rate')
         get_int_setting('Audio', 'channels')
-        get_int_setting('Whisper', 'beam_size')
-        get_float_setting('VAD', 'speech_threshold')
-        get_float_setting('VAD', 'min_speech_duration_s')
-        get_float_setting('VAD', 'max_silence_duration_s')
-        
-        # Check VAD requirements
-        sr = get_int_setting('Audio', 'sample_rate')
-        if sr not in [8000, 16000]:
-            logging.warning(f"VAD typically requires sample rate 8000 or 16000, configured: {sr}")
-        
-        vad_chunk = get_int_setting('VAD', 'vad_chunk_size')
-        expected_for_16k = 512
-        if sr == 16000 and vad_chunk != expected_for_16k:
-            logging.warning(f"For 16kHz, VAD chunk size should be {expected_for_16k}, configured: {vad_chunk}")
+        get_int_setting('Audio', 'blocksize')
+        get_float_setting('VAD', 'threshold')
+        get_int_setting('VAD', 'silence_duration_ms')
+        get_int_setting('VAD', 'prefix_padding_ms')
 
     except ValueError as e:
         print(f"ERROR: Config file has invalid number format: {e}", file=sys.stderr)
