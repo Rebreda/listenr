@@ -8,7 +8,7 @@ import numpy as np
 import soundfile as sf
 import pytest
 from pathlib import Path
-from storage import save_recording
+from listenr.storage import save_recording
 
 
 # ---------------------------------------------------------------------------

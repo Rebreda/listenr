@@ -23,3 +23,55 @@ __pycache__/
 
 node_modules
 package*.*
+.venv
+venv 
+# Build / packaging
+build/
+dist/
+eggs/
+*.egg
+pip-wheel-metadata/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Test / coverage
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+
+# Translations
+*.mo
+*.pot
+
+# Django / Flask
+local_settings.py
+instance/
+
+# Sphinx docs
+docs/_build/
+
+# PyInstaller
+*.spec
+
+# PEP 582 / pyenv / pipenv
+__pypackages__/
+.python-version
+Pipfile.lock
+
+# Misc
+.scrapy
+celerybeat-schedule
+celerybeat.pid
+.mypy_cache/
+.ropeproject/
+.idea/
+.vscode/

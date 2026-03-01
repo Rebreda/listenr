@@ -6,7 +6,7 @@ Simplified LLM Processor leveraging Lemonade Server APIs.
 import json
 import re
 import requests
-import config_manager as cfg
+import listenr.config_manager as cfg
 
 _DEFAULT_API_BASE = "http://localhost:8000/api/v1"
 
@@ -94,7 +94,7 @@ def lemonade_load_model(model_name: str, timeout: int = 120, **kwargs) -> dict:
     return resp.json()
 
 
-def lemonade_unload_models(model_name: str = None, timeout: int = 30) -> dict:
+def lemonade_unload_models(model_name: str | None = None, timeout: int = 30) -> dict:
     """
     Call POST /api/v1/unload to free model memory.
     If model_name is None, unloads all loaded models.
@@ -113,7 +113,7 @@ def lemonade_unload_models(model_name: str = None, timeout: int = 30) -> dict:
         return {"error": str(e)}
 
 
-def lemonade_llm_correct(text: str, model: str = None) -> dict:
+def lemonade_llm_correct(text: str, model: str | None = None) -> dict:
     """
     Use Lemonade's OpenAI-compatible chat completion endpoint to clean up a
     raw Whisper transcription.
@@ -154,6 +154,7 @@ def lemonade_llm_correct(text: str, model: str = None) -> dict:
             'error': str(e),
         }
 
+
 def lemonade_transcribe_audio(audio_path, model=None):
     """
     Use Lemonade's HTTP transcription endpoint for audio files.
@@ -169,11 +170,3 @@ def lemonade_transcribe_audio(audio_path, model=None):
         )
     resp.raise_for_status()
     return resp.json()["text"]
-
-# Example usage:
-if __name__ == "__main__":
-    # Example: LLM correction
-    print(lemonade_llm_correct("im going to the store two by some milk"))
-
-    # Example: Audio transcription
-    # print(lemonade_transcribe_audio("test.wav"))

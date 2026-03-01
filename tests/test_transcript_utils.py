@@ -4,7 +4,7 @@ Run with:  python -m pytest tests/
 """
 
 import pytest
-from transcript_utils import is_hallucination, strip_noise_tags, clean_transcript
+from listenr.transcript_utils import is_hallucination, strip_noise_tags, clean_transcript
 
 
 # ---------------------------------------------------------------------------

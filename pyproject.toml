@@ -19,16 +19,12 @@ dev = [
     "pytest",
 ]
 
-[tool.setuptools]
-py-modules = [
-    "listenr_cli",
-    "config_manager",
-    "llm_processor",
-    "storage",
-    "transcript_utils",
-    "unified_asr",
-    "build_dataset",
-]
+[project.scripts]
+listenr = "listenr.cli:main"
+listenr-build-dataset = "listenr.build_dataset:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

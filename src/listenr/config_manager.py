@@ -3,7 +3,7 @@ import os
 import sys
 import logging
 
-APP_NAME = 'listenr'  # Updated app name
+APP_NAME = 'listenr'
 CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".config", APP_NAME)
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
 
@@ -21,7 +21,7 @@ DEFAULT_CONFIG = {
     },
     'Audio': {
         # Mic capture rate — must match the device's native rate.
-        # listenr_cli.py resamples to 16kHz internally before sending to Lemonade /realtime.
+        # cli.py resamples to 16kHz internally before sending to Lemonade /realtime.
         'sample_rate': '48000',
         'channels': '1',
         # Chunk size in frames per mic read (~85ms worth of audio).
@@ -76,13 +76,13 @@ config = configparser.ConfigParser(
 def load_config():
     """Loads config, creates default if needed, returns config object."""
     global config
-    
+
     # Reset parser and read defaults first
     config = configparser.ConfigParser(
-        inline_comment_prefixes=('#', ';'), 
+        inline_comment_prefixes=('#', ';'),
         interpolation=None
     )
-    
+
     # Load defaults using read_dict
     config.read_dict(DEFAULT_CONFIG)
 
@@ -90,29 +90,25 @@ def load_config():
         print(f"Config file not found. Creating default at: {CONFIG_FILE}")
         try:
             os.makedirs(CONFIG_DIR, exist_ok=True)
-            # Write the fully populated config object
             with open(CONFIG_FILE, 'w') as configfile:
-                # Write header comment
                 configfile.write(f"# {APP_NAME} Configuration File\n")
                 configfile.write("# Edit this file to customize ASR settings\n")
                 configfile.write("# Lemonade Server: https://lemonade-server.ai\n\n")
-                
+
                 for section in config.sections():
                     configfile.write(f"[{section}]\n")
                     for key, value in config.items(section):
-                        # Special handling for timestamp_format - write with single %
                         if key == 'timestamp_format' and '%%' in value:
                             value = value.replace('%%', '%')
                         configfile.write(f"{key} = {value}\n")
                     configfile.write("\n")
-                    
+
             print("Default config file created.")
         except OSError as e:
             print(f"ERROR: Could not create default config: {e}", file=sys.stderr)
             return config
 
     try:
-        # Read user's file, overriding defaults where specified
         loaded_files = config.read(CONFIG_FILE)
         if loaded_files:
             print(f"Loaded config from {CONFIG_FILE}")
@@ -149,11 +145,10 @@ def get_setting(section, key, fallback_value=None):
     default_from_dict = DEFAULT_CONFIG.get(section, {}).get(key)
     final_fallback = fallback_value if default_from_dict is None else default_from_dict
     value = config.get(section, key, fallback=final_fallback)
-    
-    # Handle timestamp format specifically - convert %% to % when reading
+
     if key == 'timestamp_format' and value and '%%' in value:
         value = value.replace('%%', '%')
-    
+
     return value
 
 def get_int_setting(section, key, fallback_value=0):
@@ -199,18 +194,17 @@ def get_bool_setting(section, key, fallback_value=False):
         return final_fallback
 
 def save_config():
-    """Save current config to file"""
+    """Save current config to file."""
     try:
         os.makedirs(CONFIG_DIR, exist_ok=True)
         with open(CONFIG_FILE, 'w') as configfile:
             configfile.write(f"# {APP_NAME} Configuration File\n")
             configfile.write("# Edit this file to customize ASR settings\n\n")
-            
+
             for section in config.sections():
                 configfile.write(f"[{section}]\n")
                 for key, value in config.items(section):
-                    # Special handling for timestamp_format
-                    if key == 'timestamp_format' and '%' in value and not '%%' in value:
+                    if key == 'timestamp_format' and '%' in value and '%%' not in value:
                         value = value.replace('%', '%%')
                     configfile.write(f"{key} = {value}\n")
                 configfile.write("\n")
@@ -218,7 +212,7 @@ def save_config():
         print(f"Error saving config: {e}")
 
 def update_setting(section, key, value):
-    """Update a setting in the config"""
+    """Update a setting in the config."""
     if not config.has_section(section):
         config.add_section(section)
     config.set(section, key, str(value))

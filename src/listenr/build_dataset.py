@@ -2,24 +2,24 @@
 """
 build_dataset.py — Build train/dev/test splits from Listenr recordings.
 
-Reads all transcript JSON files saved by listenr_cli.py, filters/validates
-entries, and writes CSV (and optionally HuggingFace datasets) split files.
+Reads manifest.jsonl saved by the CLI, filters/validates entries, and writes
+CSV (and optionally HuggingFace datasets) split files.
 
 Usage:
-    uv run build_dataset.py [options]
+    listenr-build-dataset [options]
 
 Examples:
-    # Default: 80/10/10 split, CSV output in ./dataset/
-    uv run build_dataset.py
+    # Default: 80/10/10 split, CSV output in ~/listenr_dataset/
+    listenr-build-dataset
 
     # Custom output directory and split ratio
-    uv run build_dataset.py --output ~/my_dataset --split 90/5/5
+    listenr-build-dataset --output ~/my_dataset --split 90/5/5
 
     # Only include clips longer than 1 second, HuggingFace format
-    uv run build_dataset.py --min-duration 1.0 --format hf
+    listenr-build-dataset --min-duration 1.0 --format hf
 
     # Preview without writing files
-    uv run build_dataset.py --dry-run
+    listenr-build-dataset --dry-run
 """
 
 import argparse
@@ -31,10 +31,10 @@ import random
 import sys
 from pathlib import Path
 
-import config_manager as cfg
+import listenr.config_manager as cfg
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger("build_dataset")
+logger = logging.getLogger("listenr.build_dataset")
 
 # ---------------------------------------------------------------------------
 # Defaults
@@ -63,57 +63,53 @@ CSV_COLUMNS = [
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _transcripts_root() -> Path:
-    """Return the transcripts root directory from config."""
+def _manifest_path() -> Path:
+    """Return the manifest.jsonl path from config."""
     clips_path = cfg.get_setting("Storage", "audio_clips_path", "~/.listenr/audio_clips")
-    # Transcripts live next to audio_clips: ~/.listenr/transcripts
-    base = Path(clips_path).expanduser().parent
-    return base / "transcripts"
+    return Path(clips_path).expanduser() / "manifest.jsonl"
 
 
-def discover_transcripts(transcripts_root: Path) -> list[Path]:
-    """Recursively find all transcript JSON files under transcripts_root."""
-    if not transcripts_root.exists():
-        logger.warning(f"Transcripts directory not found: {transcripts_root}")
+def load_manifest(manifest_path: Path) -> list[dict]:
+    """Load all records from manifest.jsonl."""
+    if not manifest_path.exists():
+        logger.warning(f"Manifest not found: {manifest_path}")
         return []
-    return sorted(transcripts_root.rglob("*.json"))
+    records = []
+    with open(manifest_path, encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    logger.debug(f"Skipping malformed line: {e}")
+    return records
 
 
-def load_and_validate(
-    json_path: Path,
+def validate_entry(
+    data: dict,
     min_duration: float,
     min_chars: int,
 ) -> dict | None:
-    """Load a single transcript JSON; return None if it fails validation."""
-    try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.debug(f"Skipping {json_path}: {e}")
-        return None
-
-    # Required fields
+    """Validate a manifest record; return None if it fails."""
     for field in ("uuid", "raw_transcription", "audio_path"):
         if not data.get(field):
-            logger.debug(f"Skipping {json_path}: missing field '{field}'")
+            logger.debug(f"Skipping record {data.get('uuid', '?')}: missing field '{field}'")
             return None
 
-    # Duration check
     duration = float(data.get("duration_s") or 0.0)
     if duration < min_duration:
-        logger.debug(f"Skipping {json_path}: duration {duration:.2f}s < {min_duration}s")
+        logger.debug(f"Skipping {data['uuid']}: duration {duration:.2f}s < {min_duration}s")
         return None
 
-    # Transcription content check (prefer corrected, fall back to raw)
     transcript = (data.get("corrected_transcription") or data.get("raw_transcription") or "").strip()
     if len(transcript.replace(" ", "")) < min_chars:
-        logger.debug(f"Skipping {json_path}: transcript too short")
+        logger.debug(f"Skipping {data['uuid']}: transcript too short")
         return None
 
-    # Verify audio file exists
     audio_path = Path(data["audio_path"]).expanduser()
     if not audio_path.exists():
-        logger.debug(f"Skipping {json_path}: audio file missing at {audio_path}")
+        logger.debug(f"Skipping {data['uuid']}: audio file missing at {audio_path}")
         return None
 
     return {
@@ -217,7 +213,7 @@ def print_stats(entries: list[dict]) -> None:
     improved = sum(1 for e in entries if e["is_improved"])
     models = {e["whisper_model"] for e in entries if e["whisper_model"]}
 
-    print("\n─────────── Dataset Summary ───────────")
+    print("\n----------- Dataset Summary -----------")
     print(f"  Total utterances : {total:,}")
     print(f"  Total duration   : {total_dur / 60:.1f} minutes ({total_dur:.0f}s)")
     print(f"  LLM improved     : {improved:,} ({100 * improved / total:.1f}%)")
@@ -227,7 +223,7 @@ def print_stats(entries: list[dict]) -> None:
         n = split_counts.get(s, 0)
         print(f"  {s}={n}", end="")
     print()
-    print("────────────────────────────────────────\n")
+    print("---------------------------------------\n")
 
 
 # ---------------------------------------------------------------------------
@@ -235,16 +231,14 @@ def print_stats(entries: list[dict]) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    cfg.load_config()
-
     parser = argparse.ArgumentParser(
         description="Build train/dev/test dataset splits from Listenr recordings."
     )
     parser.add_argument(
-        "--transcripts",
+        "--manifest",
         type=Path,
         default=None,
-        help="Root directory containing transcript JSON files (default: from config)",
+        help="Path to manifest.jsonl (default: from config)",
     )
     parser.add_argument(
         "--output",
@@ -288,25 +282,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Resolve directories
-    transcripts_root = args.transcripts or _transcripts_root()
+    manifest_path = args.manifest or _manifest_path()
     output_dir = Path(args.output).expanduser()
 
-    # Parse split ratios
     try:
         train_frac, dev_frac, _test_frac = parse_split(args.split)
     except ValueError as e:
         logger.error(f"Invalid --split value: {e}")
         sys.exit(1)
 
-    # Discover and load transcripts
-    json_paths = discover_transcripts(transcripts_root)
-    logger.info(f"Found {len(json_paths)} JSON files in {transcripts_root}")
+    records = load_manifest(manifest_path)
+    logger.info(f"Loaded {len(records)} records from {manifest_path}")
 
     entries = []
     skipped = 0
-    for p in json_paths:
-        entry = load_and_validate(p, args.min_duration, args.min_chars)
+    for rec in records:
+        entry = validate_entry(rec, args.min_duration, args.min_chars)
         if entry:
             entries.append(entry)
         else:
@@ -318,7 +309,6 @@ def main() -> None:
         logger.error("No valid entries found. Check your recordings directory.")
         sys.exit(1)
 
-    # Assign splits
     entries = assign_splits(entries, train_frac, dev_frac, seed=args.seed)
     print_stats(entries)
 
@@ -326,14 +316,13 @@ def main() -> None:
         logger.info("Dry run — no files written.")
         return
 
-    # Write output
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.format in ("csv", "both"):
         for split_name in ("train", "dev", "test"):
             out_path = write_csv(entries, output_dir, split_name)
             n = sum(1 for e in entries if e["split"] == split_name)
-            logger.info(f"Wrote {n:,} entries → {out_path}")
+            logger.info(f"Wrote {n:,} entries -> {out_path}")
 
     if args.format in ("hf", "both"):
         write_hf_dataset(entries, output_dir)
