@@ -38,8 +38,8 @@ DEFAULT_CONFIG = {
     'VAD': {
         # Server-side VAD settings sent via session.update on the /realtime WebSocket.
         # All VAD processing happens in Lemonade; these are passed through as-is.
-        # threshold: RMS energy threshold for speech detection
-        'threshold': '0.01',
+        # threshold: RMS energy threshold for speech detection (raise to ignore background noise)
+        'threshold': '0.05',
         # silence_duration_ms: ms of silence to trigger speech end and transcription
         'silence_duration_ms': '800',
         # prefix_padding_ms: minimum speech duration (ms) before triggering transcription

@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 
 from unified_asr import LemonadeUnifiedASR
 from llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
+from transcript_utils import is_hallucination, strip_noise_tags
 import config_manager as cfg
 
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
@@ -245,6 +246,26 @@ async def main(save: bool, show_raw: bool, debug: bool):
             raw_text = result.get('transcript', '').strip()
             if not raw_text:
                 continue
+
+            # ── Hallucination / noise filtering ──────────────────────────────
+            if is_hallucination(raw_text):
+                print('\r' + ' ' * 80 + '\r', end='', flush=True)
+                if debug:
+                    print(f"  [DEBUG] 🚫 hallucination dropped: {raw_text!r}", flush=True)
+                pcm_buffer.clear()
+                continue
+
+            stripped_text = strip_noise_tags(raw_text)
+            if not stripped_text:
+                print('\r' + ' ' * 80 + '\r', end='', flush=True)
+                if debug:
+                    print(f"  [DEBUG] 🚫 all-noise stripped: {raw_text!r}", flush=True)
+                pcm_buffer.clear()
+                continue
+            if stripped_text != raw_text and debug:
+                print(f"  [DEBUG] 🔇 noise tags stripped: {raw_text!r} → {stripped_text!r}", flush=True)
+            raw_text = stripped_text
+            # ─────────────────────────────────────────────────────────────────
 
             # Clear the interim line
             print('\r' + ' ' * 80 + '\r', end='', flush=True)
