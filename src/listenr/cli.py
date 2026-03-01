@@ -23,25 +23,26 @@ import sounddevice as sd
 from collections import deque
 from math import gcd
 from scipy.signal import resample_poly
-from pathlib import Path
 
 from listenr.unified_asr import LemonadeUnifiedASR
 from listenr.llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
 from listenr.transcript_utils import is_hallucination, strip_noise_tags
 from listenr.storage import save_recording
-import listenr.config_manager as cfg
+from listenr.constants import (
+    ASR_RATE,
+    CAPTURE_RATE,
+    CHANNELS,
+    CHUNK_SIZE,
+    INPUT_DEVICE,
+    LLM_CONTEXT_WINDOW,
+    LLM_ENABLED as USE_LLM,
+    LLM_MODEL,
+    STORAGE_BASE,
+    WHISPER_MODEL,
+)
 
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 log = logging.getLogger('listenr.cli')
-
-# Audio settings from config
-CAPTURE_RATE = cfg.get_int_setting('Audio', 'sample_rate', 16000)
-ASR_RATE = 16000  # Lemonade /realtime always requires 16kHz PCM16
-CHUNK_SIZE = cfg.get_int_setting('Audio', 'blocksize', 1360)
-CHANNELS = cfg.get_int_setting('Audio', 'channels', 1)
-INPUT_DEVICE = cfg.get_setting('Audio', 'input_device', 'default') or None
-if INPUT_DEVICE == 'default':
-    INPUT_DEVICE = None
 
 # Compute resample ratio once (e.g. 48000→16000 = up 1, down 3)
 _gcd = gcd(CAPTURE_RATE, ASR_RATE)
@@ -49,21 +50,11 @@ _RESAMPLE_UP = ASR_RATE // _gcd
 _RESAMPLE_DOWN = CAPTURE_RATE // _gcd
 _NEED_RESAMPLE = (CAPTURE_RATE != ASR_RATE)
 
-# Storage
-STORAGE_BASE = Path(
-    cfg.get_setting('Storage', 'audio_clips_path', '~/listenr_recordings') or '~/listenr_recordings'
-).expanduser()
-
-# LLM settings
-USE_LLM = cfg.get_bool_setting('LLM', 'enabled', False)
-LLM_MODEL = cfg.get_setting('LLM', 'model', 'gpt-oss-20b-mxfp4-GGUF') or 'gpt-oss-20b-mxfp4-GGUF'
-WHISPER_MODEL = cfg.get_setting('Whisper', 'model', 'Whisper-Large-v3-Turbo') or 'Whisper-Large-v3-Turbo'
-
 
 def get_lemonade_ws_url() -> str:
     """Discover Lemonade WebSocket URL from /api/v1/health."""
-    api_base = cfg.get_setting('LLM', 'api_base', 'http://localhost:8000/api/v1') or 'http://localhost:8000/api/v1'
-    health_url = api_base.rstrip('/').replace('/api/v1', '') + '/api/v1/health'
+    from listenr.constants import LLM_API_BASE
+    health_url = LLM_API_BASE.rstrip('/').replace('/api/v1', '') + '/api/v1/health'
     try:
         resp = requests.get(health_url, timeout=2)
         resp.raise_for_status()
@@ -165,8 +156,7 @@ async def _run(save: bool, show_raw: bool, debug: bool):
     asr = LemonadeUnifiedASR(use_llm=False)  # LLM correction handled here for saving
     pcm_buffer: list = []
     # Rolling window of (raw, corrected) pairs passed as context to the LLM
-    _context_size = cfg.get_int_setting('LLM', 'context_window', 3)
-    llm_context: deque[tuple[str, str]] = deque(maxlen=_context_size)
+    llm_context: deque[tuple[str, str]] = deque(maxlen=LLM_CONTEXT_WINDOW)
 
     async for result in asr.stream_transcribe(
         mic_stream(pcm_buffer, debug=debug),

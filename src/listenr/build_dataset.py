@@ -26,23 +26,33 @@ import argparse
 import csv
 import json
 import logging
-import os
 import random
 import sys
 from pathlib import Path
 
-import listenr.config_manager as cfg
+from listenr.constants import (
+    DATASET_FORMAT,
+    DATASET_MIN_CHARS,
+    DATASET_MIN_DURATION,
+    DATASET_OUTPUT,
+    DATASET_SEED,
+    DATASET_SPLIT,
+    STORAGE_BASE,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("listenr.build_dataset")
 
 # ---------------------------------------------------------------------------
-# Defaults
+# Defaults (sourced from constants, which read from config at import time)
 # ---------------------------------------------------------------------------
-DEFAULT_OUTPUT = Path("~/listenr_dataset").expanduser()
-DEFAULT_SPLIT = "80/10/10"
-DEFAULT_MIN_DURATION = 0.3  # seconds
-DEFAULT_MIN_CHARS = 2  # minimum non-whitespace chars in transcription
+
+DEFAULT_OUTPUT       = DATASET_OUTPUT
+DEFAULT_SPLIT        = DATASET_SPLIT
+DEFAULT_MIN_DURATION = DATASET_MIN_DURATION
+DEFAULT_MIN_CHARS    = DATASET_MIN_CHARS
+DEFAULT_SEED         = DATASET_SEED
+DEFAULT_FORMAT       = DATASET_FORMAT
 
 CSV_COLUMNS = [
     "uuid",
@@ -65,8 +75,7 @@ CSV_COLUMNS = [
 
 def _manifest_path() -> Path:
     """Return the manifest.jsonl path from config."""
-    clips_path = cfg.get_setting("Storage", "audio_clips_path", "~/.listenr/audio_clips")
-    return Path(clips_path).expanduser() / "manifest.jsonl"
+    return STORAGE_BASE / "manifest.jsonl"
 
 
 def load_manifest(manifest_path: Path) -> list[dict]:
@@ -244,36 +253,36 @@ def main() -> None:
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT,
-        help=f"Output directory for dataset files (default: {DEFAULT_OUTPUT})",
+        help=f"Output directory for dataset files (default: from config, currently {DEFAULT_OUTPUT})",
     )
     parser.add_argument(
         "--split",
         default=DEFAULT_SPLIT,
-        help=f"Train/dev/test split percentages, e.g. 80/10/10 (default: {DEFAULT_SPLIT})",
+        help=f"Train/dev/test split percentages, e.g. 80/10/10 (default: from config, currently {DEFAULT_SPLIT})",
     )
     parser.add_argument(
         "--min-duration",
         type=float,
         default=DEFAULT_MIN_DURATION,
-        help=f"Minimum clip duration in seconds (default: {DEFAULT_MIN_DURATION})",
+        help=f"Minimum clip duration in seconds (default: from config, currently {DEFAULT_MIN_DURATION})",
     )
     parser.add_argument(
         "--min-chars",
         type=int,
         default=DEFAULT_MIN_CHARS,
-        help=f"Minimum non-whitespace chars in transcription (default: {DEFAULT_MIN_CHARS})",
+        help=f"Minimum non-whitespace chars in transcription (default: from config, currently {DEFAULT_MIN_CHARS})",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=42,
-        help="Random seed for reproducible splits (default: 42)",
+        default=DEFAULT_SEED,
+        help=f"Random seed for reproducible splits (default: from config, currently {DEFAULT_SEED})",
     )
     parser.add_argument(
         "--format",
         choices=["csv", "hf", "both"],
-        default="csv",
-        help="Output format: csv, hf (HuggingFace datasets), or both (default: csv)",
+        default=DEFAULT_FORMAT,
+        help=f"Output format: csv, hf (HuggingFace datasets), or both (default: from config, currently {DEFAULT_FORMAT})",
     )
     parser.add_argument(
         "--dry-run",

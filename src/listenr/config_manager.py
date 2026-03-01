@@ -54,10 +54,18 @@ DEFAULT_CONFIG = {
         'timeout': '30',
         'context_window': '10',  # Number of preceding segments passed as context to the LLM
     },
+    'Dataset': {
+        'output_path': '~/listenr_dataset',   # Where build_dataset writes CSV/HF output
+        'split': '80/10/10',                  # Train/dev/test split percentages
+        'min_duration': '0.3',                # Minimum clip duration in seconds
+        'min_chars': '2',                     # Minimum non-whitespace chars in transcription
+        'seed': '42',                         # Random seed for reproducible splits
+        'format': 'csv',                      # Output format: csv, hf, or both
+    },
     'Output': {
         'file': '~/transcripts_raw.txt',
         'llm_file': '~/transcripts_clean.txt',
-        'format': '[{timestamp}] {text}',
+        'line_format': '[{timestamp}] {text}',
         'timestamp_format': '%%Y-%%m-%%d %%H:%%M:%%S',  # Double %% for configparser escaping
         'show_raw': 'false',
     },
