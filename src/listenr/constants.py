@@ -105,7 +105,19 @@ DATASET_SPLIT: str = cfg.get_setting("Dataset", "split", "80/10/10") or "80/10/1
 DATASET_MIN_DURATION: float = cfg.get_float_setting("Dataset", "min_duration", 0.3)
 DATASET_MIN_CHARS: int = cfg.get_int_setting("Dataset", "min_chars", 2)
 DATASET_SEED: int = cfg.get_int_setting("Dataset", "seed", 42)
-DATASET_FORMAT: str = cfg.get_setting("Dataset", "format", "csv") or "csv"
+
+_VALID_DATASET_FORMATS: frozenset[str] = frozenset({"csv", "hf", "both"})
+_raw_dataset_format: str = cfg.get_setting("Dataset", "format", "csv") or "csv"
+if _raw_dataset_format not in _VALID_DATASET_FORMATS:
+    import warnings
+    warnings.warn(
+        f"Config [Dataset] format={_raw_dataset_format!r} is not a recognised value "
+        f"({', '.join(sorted(_VALID_DATASET_FORMATS))}); falling back to 'csv'.",
+        UserWarning,
+        stacklevel=2,
+    )
+    _raw_dataset_format = "csv"
+DATASET_FORMAT: str = _raw_dataset_format
 
 # ---------------------------------------------------------------------------
 # Output / transcript files
