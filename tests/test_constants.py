@@ -180,7 +180,7 @@ class TestConstantValues:
         assert C.DATASET_MIN_CHARS >= 0
 
     def test_dataset_format_valid(self):
-        assert C.DATASET_FORMAT in {'csv', 'hf', 'parquet'}
+        assert C.DATASET_FORMAT in {'csv', 'hf', 'both'}
 
     def test_lemonade_api_base_starts_with_http(self):
         assert C.LEMONADE_API_BASE.startswith('http')
