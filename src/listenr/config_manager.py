@@ -50,8 +50,9 @@ DEFAULT_CONFIG = {
         'model': 'gpt-oss-20b-mxfp4-GGUF',  # LLM model name (must be loaded in Lemonade)
         'api_base': 'http://localhost:8000/api/v1',  # Lemonade Server API base
         'temperature': '0.3',
-        'max_tokens': '150',
-        'timeout': '10',
+        'max_tokens': '1500',
+        'timeout': '30',
+        'context_window': '10',  # Number of preceding segments passed as context to the LLM
     },
     'Output': {
         'file': '~/transcripts_raw.txt',

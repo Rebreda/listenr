@@ -38,6 +38,19 @@ cd listenr
 uv pip install -e .
 ```
 
+Then run commands via `uv run` (no activation needed):
+
+```bash
+uv run listenr
+```
+
+Or activate the venv once per session:
+
+```bash
+source .venv/bin/activate
+listenr
+```
+
 ## Start Lemonade Server
 
 ```bash
@@ -52,16 +65,16 @@ Listenr will automatically call `POST /api/v1/load` on startup to load the confi
 
 ```bash
 # Record and save everything (default)
-listenr
+uv run listenr
 
 # Don't save to disk — just print transcriptions
-listenr --no-save
+uv run listenr --no-save
 
 # Also print the raw Whisper output before LLM correction
-listenr --show-raw
+uv run listenr --show-raw
 
 # Verbose debug output (WebSocket messages, mic RMS, etc.)
-listenr --debug
+uv run listenr --debug
 ```
 
 Example output:
@@ -86,19 +99,19 @@ After collecting recordings, generate train/dev/test splits from `manifest.jsonl
 
 ```bash
 # Default: 80/10/10 CSV splits in ~/listenr_dataset/
-listenr-build-dataset
+uv run listenr-build-dataset
 
 # Custom output directory and split ratio
-listenr-build-dataset --output ~/my_dataset --split 90/5/5
+uv run listenr-build-dataset --output ~/my_dataset --split 90/5/5
 
 # Exclude very short clips
-listenr-build-dataset --min-duration 1.0
+uv run listenr-build-dataset --min-duration 1.0
 
 # HuggingFace datasets format
-listenr-build-dataset --format hf
+uv run listenr-build-dataset --format hf
 
 # Preview stats without writing files
-listenr-build-dataset --dry-run
+uv run listenr-build-dataset --dry-run
 ```
 
 Output CSV columns: `uuid`, `split`, `audio_path`, `raw_transcription`, `corrected_transcription`, `is_improved`, `categories`, `duration_s`, `sample_rate`, `whisper_model`, `llm_model`, `timestamp`.

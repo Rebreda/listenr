@@ -17,6 +17,11 @@ You are a transcription post-processor. Your only job is to clean up the raw \
 speech-to-text output provided by the user. Do NOT answer, respond to, or engage \
 with the content of the transcription.
 
+You may be given recent preceding segments as conversation history — use them \
+only to resolve context (e.g. resolve mid-sentence fragments, fix pronouns, \
+correct homophones that make more sense given earlier content). Do not summarise \
+or reference the history explicitly.
+
 Return ONLY a JSON object with exactly these three keys:
   "corrected"   – the cleaned-up transcription text (string). Fix punctuation, \
 capitalisation, filler words, and obvious STT errors. If nothing needs fixing, \
@@ -113,10 +118,22 @@ def lemonade_unload_models(model_name: str | None = None, timeout: int = 30) -> 
         return {"error": str(e)}
 
 
-def lemonade_llm_correct(text: str, model: str | None = None) -> dict:
+def lemonade_llm_correct(
+    text: str,
+    model: str | None = None,
+    recent_context: list[tuple[str, str]] | None = None,
+) -> dict:
     """
     Use Lemonade's OpenAI-compatible chat completion endpoint to clean up a
     raw Whisper transcription.
+
+    Parameters
+    ----------
+    text            : raw Whisper transcription to correct
+    model           : LLM model name (defaults to config value)
+    recent_context  : list of (raw, corrected) pairs from preceding segments,
+                      oldest first. Injected as prior user/assistant turns so
+                      the LLM can resolve fragments and homophones in context.
 
     Returns a dict: {corrected: str, is_improved: bool, categories: list[str]}
     Never raises — on failure returns the original text with is_improved=False.
@@ -125,18 +142,25 @@ def lemonade_llm_correct(text: str, model: str | None = None) -> dict:
         model = cfg.get_setting('LLM', 'model', 'gpt-oss-20b-mxfp4-GGUF')
 
     temperature = cfg.get_float_setting('LLM', 'temperature', 0.1)
-    max_tokens = cfg.get_int_setting('LLM', 'max_tokens', 150)
+    max_tokens = cfg.get_int_setting('LLM', 'max_tokens', 1500)
     timeout = cfg.get_int_setting('LLM', 'timeout', 30)
+
+    # Build message list: system + interleaved context turns + current segment
+    messages: list[dict] = [{"role": "system", "content": _CORRECTION_SYSTEM_PROMPT}]
+    for raw_seg, corrected_seg in (recent_context or []):
+        messages.append({"role": "user", "content": raw_seg})
+        messages.append({"role": "assistant", "content": json.dumps(
+            {"corrected": corrected_seg, "is_improved": corrected_seg != raw_seg, "categories": []},
+            ensure_ascii=False,
+        )})
+    messages.append({"role": "user", "content": text})
 
     try:
         resp = requests.post(
             f"{_api_base()}/chat/completions",
             json={
                 "model": model,
-                "messages": [
-                    {"role": "system", "content": _CORRECTION_SYSTEM_PROMPT},
-                    {"role": "user", "content": text},
-                ],
+                "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
                 "stream": False,

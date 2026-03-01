@@ -20,6 +20,7 @@ import json
 import requests
 import numpy as np
 import sounddevice as sd
+from collections import deque
 from math import gcd
 from scipy.signal import resample_poly
 from pathlib import Path
@@ -163,6 +164,9 @@ async def _run(save: bool, show_raw: bool, debug: bool):
 
     asr = LemonadeUnifiedASR(use_llm=False)  # LLM correction handled here for saving
     pcm_buffer: list = []
+    # Rolling window of (raw, corrected) pairs passed as context to the LLM
+    _context_size = cfg.get_int_setting('LLM', 'context_window', 3)
+    llm_context: deque[tuple[str, str]] = deque(maxlen=_context_size)
 
     async for result in asr.stream_transcribe(
         mic_stream(pcm_buffer, debug=debug),
@@ -214,12 +218,19 @@ async def _run(save: bool, show_raw: bool, debug: bool):
             categories: list = []
 
             if USE_LLM:
-                llm_result = lemonade_llm_correct(raw_text, model=LLM_MODEL)
+                llm_result = lemonade_llm_correct(
+                    raw_text,
+                    model=LLM_MODEL,
+                    recent_context=list(llm_context),
+                )
                 corrected_text = llm_result['corrected']
                 is_improved = llm_result['is_improved']
                 categories = llm_result.get('categories', [])
                 if 'error' in llm_result and debug:
                     print(f"  WARNING: LLM error: {llm_result['error']}")
+
+            # Add to context window regardless of whether LLM was used
+            llm_context.append((raw_text, corrected_text))
 
             if show_raw and is_improved:
                 print(f"  [RAW] {raw_text}")
