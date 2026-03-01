@@ -16,8 +16,8 @@ DEFAULT_CONFIG = {
     },
     'Whisper': {
         # Whisper model name served by Lemonade (whisper.cpp backend).
-        # Available models: Whisper-Tiny, Whisper-Base, Whisper-Small
-        'model': 'Whisper-Small',
+        # Available models: Whisper-Tiny, Whisper-Large-v3-Turbo
+        'model': 'Whisper-Large-v3-Turbo',
     },
     'Audio': {
         # Lemonade /realtime requires exactly: 16kHz, mono, PCM16
@@ -46,7 +46,7 @@ DEFAULT_CONFIG = {
     },
     'LLM': {
         'enabled': 'true',  # Enable LLM post-processing of transcriptions
-        'model': 'Qwen3-0.6B-GGUF',  # LLM model name (must be loaded in Lemonade)
+        'model': 'gpt-oss-20b-mxfp4-GGUF',  # LLM model name (must be loaded in Lemonade)
         'api_base': 'http://localhost:8000/api/v1',  # Lemonade Server API base
         'temperature': '0.3',
         'max_tokens': '150',

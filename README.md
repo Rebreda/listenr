@@ -1,330 +1,282 @@
 
 # Listenr: Local Dataset Collection for ASR Training
 
-Listenr is a privacy-first tool for collecting real-world audio and high-quality transcriptions, designed to help users and researchers build better automatic speech recognition (ASR) models. Instead of sending your voice to the cloud, Listenr runs entirely on your own hardware, using open-source models and local inference to capture, transcribe, and correct natural speech. The result is a rich, automatically-enhanced dataset that is ideal for training and fine-tuning ASR systems.
+Listenr is a privacy-first tool for collecting real-world audio and high-quality transcriptions, designed to help build better automatic speech recognition (ASR) models. All processing runs locally on your hardware via [Lemonade Server](https://lemonade-server.ai) — no audio or text leaves your machine.
 
 ## Why Listenr?
 
-- **Local-Only, Private by Design:** All processing happens on your machine. No audio or text is sent to external servers or cloud APIs.
-- **Open Models, Open Hardware:** Uses Lemonade Server to run open-source models (Whisper.cpp, Llama.cpp, etc.) on your CPU, GPU, or NPU.
-- **Automatic Correction Pipeline:** Transcriptions are improved using a local LLM, which leverages conversation context (previous and next utterances) to correct errors, punctuation, and grammar—creating a more accurate text corpus.
-- **Real-World Data:** Collects natural, conversational speech in realistic environments, not just lab conditions.
-- **Dataset-Ready Output:** Audio clips and their corrected transcriptions are saved together, ready for use in ASR model training or fine-tuning.
+- **Local-only, private by design.** No cloud APIs. All inference runs on your CPU, GPU, or NPU via Lemonade Server.
+- **Open models.** Uses Whisper.cpp for transcription and any GGUF-compatible LLM for post-processing correction.
+- **Automatic correction pipeline.** A local LLM cleans up punctuation, grammar, and homophones — producing a higher-quality training corpus than raw Whisper output alone.
+- **Real-world data.** Collects natural, conversational speech in realistic environments.
+- **Dataset-ready output.** Every utterance is saved with its audio clip and both raw/corrected transcriptions. A single command builds train/dev/test splits.
 
 ## How It Works
 
-1. **Continuous Recording:** Listenr captures audio as you speak, segmenting speech automatically using VAD (voice activity detection).
-2. **Local Transcription:** Each segment is transcribed using a local Whisper model via Lemonade Server.
-3. **Contextual Correction:** A local LLM reviews the transcription, using surrounding conversation context to correct mistakes and improve fluency.
-4. **Corpus Creation:** Both the original and corrected transcriptions, along with the audio, are saved for each segment—building a high-quality dataset as you use the tool.
+1. **Capture.** `listenr_cli.py` streams your microphone to Lemonade's `/realtime` WebSocket endpoint at ~85 ms chunks.
+2. **VAD.** Lemonade's built-in server-side voice activity detection segments speech boundaries automatically.
+3. **Transcribe.** Lemonade runs Whisper.cpp on each speech segment and returns a transcript.
+4. **Correct (optional).** The transcript is sent to a local LLM via Lemonade's chat completions API for punctuation and grammar correction.
+5. **Save.** Each utterance is saved as a `.wav` file and a `.json` metadata file, organized by date.
+6. **Build dataset.** `build_dataset.py` aggregates all saved recordings into train/dev/test CSV (or HuggingFace `datasets`) splits.
 
-## Why This Matters for ASR Training
+## Project Layout
 
-Training and fine-tuning ASR models requires large, diverse, and accurate datasets. Listenr makes it easy to collect such data in real-world conditions, with minimal manual effort. The automatic correction pipeline means you get not just raw machine transcriptions, but also contextually-improved, human-like text—boosting the quality of your training corpus. This is especially valuable for:
-
-- **Domain Adaptation:** Collect speech in your target environment (e.g., meetings, home, fieldwork) to adapt models to your needs.
-- **Accent and Language Coverage:** Gather data from real users, capturing natural variation in speech.
-- **Error Correction Research:** Study how LLMs can post-process ASR output for better downstream performance.
-
-## Quick Start
-
-
-## Features
-
-- Continuous listening and segmentation (no start/stop buttons)
-- Smart VAD-based speech detection
-- Real-time transcription and correction pipeline
-- Mobile-friendly web interface
-- All data saved locally, organized for dataset use
-
-## Quick Start
-
-brew install ffmpeg
-
-### Installation
-
-```bash
-# Install Python dependencies
-pip install -r server/requirements.txt
-
-# (Optional) Install ffmpeg if you want to support a wide range of audio file formats for upload or batch processing.
-# For most live microphone/web use, ffmpeg is not required unless you plan to import/export non-wav files.
-# Linux:
-sudo apt install ffmpeg
-# macOS:
-brew install ffmpeg
+```
+listenr/
+├── listenr_cli.py       # CLI: mic → Lemonade /realtime → save recordings
+├── unified_asr.py       # Core: LemonadeUnifiedASR class (streaming + batch)
+├── llm_processor.py     # Lemonade HTTP wrappers: transcription + LLM correction
+├── config_manager.py    # Config loader (~/.config/listenr/config.ini)
+├── build_dataset.py     # Build train/dev/test splits from saved recordings
+├── server/
+│   ├── app.py           # Flask/WebSocket server for browser-based capture
+│   └── templates/
+│       ├── index_visual.html   # Full-featured web UI
+│       └── index.html          # Simple web UI
+├── requirements.txt     # Python dependencies
+└── prd/                 # Design documents
 ```
 
+## Requirements
 
-### Start Lemonade Server
+- [Lemonade Server](https://lemonade-server.ai) running on `localhost:8000`
+- A Whisper model loaded in Lemonade (`Whisper-Tiny`, `Whisper-Base`, or `Whisper-Small`)
+- Python 3.11+ with `uv` (recommended) or `pip`
 
-Lemonade Server is required for all local inference. See https://lemonade-server.ai for installation and model management.
+## Installation
 
 ```bash
-# Install Lemonade Server (see https://lemonade-server.ai)
-# Download and run models as needed (see Lemonade docs)
+# Clone the repo
+git clone https://github.com/Rebreda/listenr
+cd listenr
 
-# Start Lemonade Server (default port 8000)
+# Install dependencies
+uv pip install -r requirements.txt
+# or: pip install -r requirements.txt
+```
+
+## Start Lemonade Server
+
+Lemonade Server must be running before using Listenr. See [lemonade-server.ai](https://lemonade-server.ai) for installation.
+
+```bash
 lemonade-server serve
 ```
 
-### Run Listenr
+Load the models you plan to use (Lemonade auto-downloads on first use):
 
 ```bash
-# Start the Listenr web server
-python server/app.py
+# Load Whisper for transcription
+lemonade-server load Whisper-Small
 
-# Open in browser:
-# - Computer: http://localhost:5000
-# - Phone: http://YOUR_IP:5000
-```
-
-
-
-### Enable LLM Correction (Optional)
-
-To enable local LLM-based correction, make sure you have a compatible LLM model downloaded and available in Lemonade Server. Then set the environment variable before starting Listenr:
-
-```bash
-export LISTENR_USE_LLM=true
-python server/app.py
+# Load an LLM for correction (optional)
+lemonade-server load Qwen3-0.6B-GGUF
 ```
 
 ## Usage
 
-### Web Interface
+### CLI — Real-Time Microphone Capture
 
-1. Open http://localhost:5000 in your browser
-2. Click the big microphone button once
-3. Grant microphone permissions
-4. Start talking naturally
-5. Pause between thoughts
-6. Watch transcripts appear automatically!
-
-
-The system automatically:
-- Detects when you start and stop speaking
-- Records and segments your speech
-- Transcribes and corrects each segment
-- Saves audio and both raw/corrected text for every utterance
-
-### Command Line
-
-
-Use the Lemonade-powered ASR system directly from terminal:
+The primary tool for dataset collection. Streams your mic to Lemonade and saves each utterance.
 
 ```bash
-# Transcribe an audio file
-python unified_asr.py --audio path/to/audio.wav
+# Record and save everything (default)
+uv run listenr_cli.py
 
-# With LLM
-python unified_asr.py --llm --audio path/to/audio.wav
+# Don't save to disk — just print transcriptions
+uv run listenr_cli.py --no-save
+
+# Also print the raw Whisper output before LLM correction
+uv run listenr_cli.py --show-raw
 ```
 
-### Mobile Usage
-
-
-Great for hands-free, natural data collection on your phone:
-
-1. Start server on your computer
-2. Find your IP: `ip addr show | grep inet`
-3. Open `http://YOUR_IP:5000` on your phone
-4. Tap mic button once
-5. Put phone in pocket
-6. Start talking!
-
-All transcripts save automatically with audio clips and metadata.
-
-## Architecture
-
-### Clean Separation
+Output while running:
 
 ```
-listenr/
-├── unified_asr.py          # Core ASR system (Lemonade API: Whisper.cpp + LLM)
-├── config_manager.py       # Configuration management
-├── llm_processor.py        # Lemonade API wrappers for LLM/ASR
-├── server/
-│   ├── app.py              # Flask WebSocket server
-│   ├── requirements.txt    # Python dependencies
-│   └── templates/
-│       └── index.html      # Web interface
-└── README.md               # This file
+🎤 Listenr CLI — streaming to Lemonade
+   Model  : Whisper-Small
+   WS URL : ws://localhost:8001/realtime?model=Whisper-Small
+   LLM    : enabled (Qwen3-0.6B-GGUF)
+   Save   : yes → ~/.listenr/audio_clips
+   Press Ctrl+C to stop.
+
+  [ASR] Hello, this is a test.
+  [SAVED] ~/.listenr/audio_clips/audio/2026-02-28/clip_2026-02-28_abc123.wav (2.4s, improved=True)
 ```
 
-### Data Flow
+### Build a Dataset
 
+After collecting recordings, generate train/dev/test splits:
+
+```bash
+# Default: 80/10/10 CSV splits in ~/listenr_dataset/
+uv run build_dataset.py
+
+# Custom output and split ratio
+uv run build_dataset.py --output ~/my_dataset --split 90/5/5
+
+# Exclude very short clips
+uv run build_dataset.py --min-duration 1.0
+
+# HuggingFace datasets format
+uv run build_dataset.py --format hf
+
+# Preview stats without writing files
+uv run build_dataset.py --dry-run
 ```
-Browser Microphone
-    ↓ (continuous audio)
-WebSocket Connection
-    ↓ (base64 chunks)
-UnifiedASR.process_vad_chunk()
-    ↓ (VAD segmentation)
-Lemonade Whisper Transcription
-    ↓ (optional)
-Lemonade LLM Post-Processing
-    ↓
-JSON Response → WebSocket → Browser
-    ↓
-Display + Save to Disk
+
+Output CSV columns: `uuid`, `split`, `audio_path`, `raw_transcription`, `corrected_transcription`, `is_improved`, `duration_s`, `sample_rate`, `whisper_model`, `llm_model`, `timestamp`.
+
+### Batch Transcription
+
+Transcribe a single audio file using the Lemonade HTTP API:
+
+```bash
+uv run unified_asr.py --audio path/to/audio.wav --whisper-model Whisper-Small
+
+# With LLM correction
+uv run unified_asr.py --llm --audio path/to/audio.wav
 ```
 
-asr = UnifiedASR(mode='cli')
-asr.start_cli()  # Continuous terminal transcription
-asr = UnifiedASR(mode='stream')
-asr.start_stream(callback=callback)
+### Web Interface
 
-## Unified ASR System
+For browser-based capture (useful for phone recording or multi-user collection):
 
-All functionality uses a single `unified_asr.py` implementation. You can use it for batch, streaming, or web-based collection. All outputs are saved in a consistent, dataset-friendly format (see Lemonade API docs for details).
+```bash
+python server/app.py
+# Open http://localhost:5000
+
+# With LLM correction enabled
+LISTENR_USE_LLM=true python server/app.py
+```
+
+Environment variables for the web server:
+
+| Variable | Default | Description |
+|---|---|---|
+| `LISTENR_PORT` | `5000` | HTTP port |
+| `LISTENR_HOST` | `0.0.0.0` | Bind address |
+| `LISTENR_USE_LLM` | `false` | Enable LLM post-processing |
+| `LISTENR_STORAGE` | from config | Storage base directory |
+
+For mobile access, open `http://YOUR_LAN_IP:5000` on your phone. Note: browsers require HTTPS for microphone access on non-localhost origins — use a reverse proxy with TLS for remote use.
 
 ## Configuration
 
-Edit `config.ini` to customize:
+Config is stored at `~/.config/listenr/config.ini` and created with defaults on first run.
 
 ```ini
-[VAD]
-speech_threshold = 0.5        # Higher = less sensitive
-min_speech_duration_s = 0.3   # Minimum speech length
-max_silence_duration_s = 0.8  # Pause before ending segment
+[Lemonade]
+# HTTP API base — WebSocket port is discovered dynamically via GET /api/v1/health
+api_base = http://localhost:8000/api/v1
+
+[Whisper]
+# Lemonade whisper.cpp backend: Whisper-Tiny, Whisper-Base, Whisper-Small
+model = Whisper-Small
 
 [Audio]
+# Lemonade /realtime requires 16kHz mono PCM16 — do not change sample_rate or channels
 sample_rate = 16000
-leading_silence_s = 0.3       # Silence before speech
-trailing_silence_s = 0.3      # Silence after speech
+channels = 1
+# Chunk size in frames per mic read (~85ms at 16kHz = 1360 frames, as recommended by Lemonade spec)
+blocksize = 1360
+input_device = default  # 'default' or device index (see sounddevice docs)
 
-## Lemonade Server Model Selection
-#
-# Model names must match those available in your Lemonade Server instance.
-# See Lemonade docs for model management (install, load, list, etc).
+[VAD]
+# Server-side VAD — these are sent to Lemonade via session.update, not processed locally
+threshold = 0.01          # RMS energy threshold for speech detection
+silence_duration_ms = 800 # Silence (ms) to trigger end of utterance
+prefix_padding_ms = 250   # Minimum speech (ms) before transcription triggers
 
 [LLM]
 enabled = true
-model = gpt-oss-20b-mxfp4-GGUF
-temperature = 0.1
+model = Qwen3-0.6B-GGUF   # Must be loaded in Lemonade
+api_base = http://localhost:8000/api/v1
+temperature = 0.3
+max_tokens = 150
+timeout = 10
 
-[Whisper]
-model = Whisper-Large-v3-Turbo
+[Storage]
+audio_clips_path = ~/.listenr/audio_clips
+audio_clips_enabled = true
+retention_days = 90
+max_storage_gb = 10
+clip_format = wav
 ```
 
-Environment variables override config:
+### VAD Tuning
 
-```bash
-export LISTENR_STORAGE=~/my_recordings  # Storage directory
-export LISTENR_PORT=8080                # Server port
-export LISTENR_HOST=0.0.0.0             # Server host
-export LISTENR_USE_LLM=true             # Enable LLM
+VAD runs server-side in Lemonade. Adjust in `[VAD]`:
+
+| Goal | Setting |
+|---|---|
+| Segment shorter utterances | Lower `silence_duration_ms` (e.g. `500`) |
+| Avoid cutting off speech | Raise `silence_duration_ms` (e.g. `1200`) |
+| Ignore background noise | Raise `threshold` (e.g. `0.05`) |
+| Capture quiet speech | Lower `threshold` (e.g. `0.005`) |
+
+## Storage Layout
+
 ```
-
-## Storage
-
-All recordings are automatically organized by date:
-
-```
-~/listenr_web/
+~/.listenr/audio_clips/
 ├── audio/
-│   └── 2025-10-12/
-│       ├── clip_2025-10-12_abc123.wav
-│       └── clip_2025-10-12_def456.wav
+│   └── 2026-02-28/
+│       ├── clip_2026-02-28_abc123.wav
+│       └── clip_2026-02-28_def456.wav
 └── transcripts/
-    └── 2025-10-12/
-        ├── transcript_2025-10-12_abc123.json
-        └── transcript_2025-10-12_def456.json
+    └── 2026-02-28/
+        ├── transcript_2026-02-28_abc123.json
+        └── transcript_2026-02-28_def456.json
 ```
 
-Each transcript JSON includes:
-- Raw transcription
-- LLM-corrected text (if enabled)
-- Audio file path and URL
-- Duration, sample rate
-- Timestamp, UUID
-- Language detection
-- All metadata
+Each transcript JSON:
 
-
-## Tips for High-Quality Data
-
-- Speak naturally, as you would in real conversations
-- Pause briefly between thoughts to help segmentation
-- Use a quiet environment for best results, but real-world noise is valuable for robust models
-- Use a good microphone if possible
-
-```ini
-# More sensitive (segments shorter speech)
-[VAD]
-speech_threshold = 0.3
-max_silence_duration_s = 0.5
-
-# Less sensitive (waits longer)
-[VAD]
-speech_threshold = 0.7
-max_silence_duration_s = 1.5
+```json
+{
+  "uuid": "abc123",
+  "timestamp": "2026-02-28T14:30:00+00:00",
+  "audio_path": "/home/user/.listenr/audio_clips/audio/2026-02-28/clip_2026-02-28_abc123.wav",
+  "raw_transcription": "im going to the store two buy some milk",
+  "corrected_transcription": "I'm going to the store to buy some milk.",
+  "is_improved": true,
+  "whisper_model": "Whisper-Small",
+  "llm_model": "Qwen3-0.6B-GGUF",
+  "duration_s": 2.4,
+  "sample_rate": 16000
+}
 ```
-
-
-### GPU Acceleration
-
-If your hardware supports it, Lemonade Server can use your GPU for faster inference. See Lemonade documentation for details.
 
 ## Troubleshooting
 
-**WebSocket keeps disconnecting**:
-- Check firewall settings
-- Verify network stability
-- Check server logs for errors
+**`Could not discover Lemonade websocket port`**
+Lemonade Server is not running or not reachable on port 8000. Start it with `lemonade-server serve` and check `GET http://localhost:8000/api/v1/health`.
 
-**Microphone not working**:
-- Grant browser microphone permissions
-- Check if another app is using the mic
-- Try HTTPS for remote access (required by browsers)
+**No transcriptions appear**
+- Confirm the Whisper model is loaded: `GET http://localhost:8000/api/v1/models`
+- Lower `threshold` in `[VAD]` if your mic input is quiet
+- Try `--show-raw` to see if raw Whisper output is coming through
 
+**LLM correction not working**
+- Check `LLM.enabled = true` in config
+- Confirm the LLM model name matches a model loaded in Lemonade
+- LLM errors are non-fatal — the raw transcript is saved regardless
 
-**Transcripts are delayed**:
-- Use smaller Whisper model (e.g., Whisper-Tiny)
-- Ensure Lemonade Server is running and responsive
-- Check CPU usage
-- Reduce `max_silence_duration_s` for faster segmentation
+**Browser mic not working**
+- Grant microphone permissions when prompted
+- On non-localhost origins, browsers require HTTPS for mic access
 
-**Too many/few segments**:
-- Adjust `speech_threshold` in config.ini
-- Adjust `max_silence_duration_s`
-- Check background noise levels
-
-## Advanced Usage
-
-
-### Custom Integration
-
-Use the Lemonade API directly for advanced use cases. See Lemonade Server documentation for full API details and endpoints.
-
-### Custom Callback
-
-```python
-def my_callback(result):
-    print(f"[{result['timestamp']}] {result['transcription']}")
-    # Send to database, API, etc.
-
-asr = UnifiedASR(mode='stream')
-asr.start_stream(callback=my_callback)
-```
-
-## Documentation
-
-- `LIVE_STREAMING.md` - Deep dive on live streaming mode
-- `config.ini` - All configuration options
-- `prd/` - Original design documents
+**Too many / too few segments**
+Adjust `[VAD] silence_duration_ms` and `threshold` in your config file.
 
 ## License
 
-Mozilla Public License Version 2.0 - see `LICENSE`
+Mozilla Public License Version 2.0 — see `LICENSE`.
 
 ## Acknowledgments
 
-- [Lemonade Server](https://github.com/lemonade-org/lemonade) - Unified local inference API
-- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) - Fast local ASR
-- [llama.cpp](https://github.com/ggerganov/llama.cpp) - Fast local LLMs
-
----
+- [Lemonade Server](https://lemonade-server.ai) — unified local inference API
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — fast local ASR
+- [llama.cpp](https://github.com/ggerganov/llama.cpp) — fast local LLMs
 
 
