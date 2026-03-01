@@ -3,6 +3,8 @@
 
 Listenr is a privacy-first tool for collecting real-world audio and high-quality transcriptions, designed to help build better automatic speech recognition (ASR) models. All processing runs locally on your hardware via [Lemonade Server](https://lemonade-server.ai) — no audio or text leaves your machine.
 
+![Listenr CLI streaming — example output](screenshot.png)
+
 ## Why Listenr?
 
 - **Local-only, private by design.** No cloud APIs. All inference runs on your CPU, GPU, or NPU via Lemonade Server.
@@ -20,17 +22,7 @@ Listenr is a privacy-first tool for collecting real-world audio and high-quality
 5. **Save.** Each utterance is saved as a `.wav` + `.json` pair and appended to `manifest.jsonl`.
 6. **Build dataset.** `build_dataset.py` reads the manifest and writes train/dev/test CSV splits.
 
-## Project Layout
 
-```
-listenr/
-├── listenr_cli.py       # CLI: mic → Lemonade /realtime → save recordings
-├── unified_asr.py       # LemonadeUnifiedASR: WebSocket streaming + batch transcription
-├── llm_processor.py     # Lemonade HTTP helpers: load/unload, LLM correction, transcription
-├── config_manager.py    # Config loader/writer (~/.config/listenr/config.ini)
-├── build_dataset.py     # Build train/dev/test splits from manifest.jsonl
-└── requirements.txt     # Python dependencies
-```
 
 ## Requirements
 
@@ -126,43 +118,6 @@ uv run unified_asr.py --llm --audio path/to/audio.wav
 
 Config is created with defaults at `~/.config/listenr/config.ini` on first run.
 
-```ini
-[Lemonade]
-# HTTP API base — WebSocket port is discovered dynamically via GET /api/v1/health
-api_base = http://localhost:8000/api/v1
-
-[Whisper]
-# Available: Whisper-Tiny, Whisper-Large-v3-Turbo
-model = Whisper-Large-v3-Turbo
-
-[Audio]
-# Mic capture rate — use your device's native rate. Listenr resamples to 16kHz internally.
-sample_rate = 44100
-channels = 1
-blocksize = 3749    # ~85ms at 44100Hz
-input_device = pipewire  # 'pipewire', device name, index number, or 'default'
-
-[VAD]
-# Server-side VAD — sent to Lemonade via session.update, processed entirely on the server
-threshold = 0.01           # RMS energy threshold for speech detection
-silence_duration_ms = 800  # Silence (ms) to trigger end of utterance
-prefix_padding_ms = 250    # Minimum speech (ms) before transcription triggers
-
-[LLM]
-enabled = true
-model = gpt-oss-20b-mxfp4-GGUF
-api_base = http://localhost:8000/api/v1
-temperature = 0.1
-max_tokens = 150
-timeout = 30
-
-[Storage]
-audio_clips_path = ~/.listenr/audio_clips
-audio_clips_enabled = true
-retention_days = 90
-max_storage_gb = 10
-clip_format = wav
-```
 
 ### Finding your input device
 
@@ -181,18 +136,6 @@ Set `input_device` to the device name (partial match works) or its index number.
 | Ignore background noise | Raise `threshold` (e.g. `0.05`) |
 | Capture quiet speech | Lower `threshold` (e.g. `0.005`) |
 
-## Storage Layout
-
-```
-~/.listenr/audio_clips/
-├── manifest.jsonl               ← single queryable file covering all recordings
-├── audio/
-│   └── 2026-02-28/
-│       └── clip_2026-02-28_abc123.wav
-└── transcripts/
-    └── 2026-02-28/
-        └── transcript_2026-02-28_abc123.json
-```
 
 ### manifest.jsonl
 
