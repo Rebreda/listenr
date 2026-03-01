@@ -102,8 +102,9 @@ def ensure_models_loaded(debug: bool = False) -> None:
             print(f"⚠️  Failed to load LLM '{LLM_MODEL}': {e} — LLM correction disabled")
 
 
-def save_recording(pcm_frames: list, raw_text: str, corrected_text: str) -> dict:
-    """Save audio and transcript JSON to the storage directory."""
+def save_recording(pcm_frames: list, raw_text: str, corrected_text: str,
+                   is_improved: bool = False, categories: list = None) -> dict:
+    """Save audio and transcript JSON to the storage directory, and append to manifest.jsonl."""
     ts = datetime.now(timezone.utc)
     date_str = ts.strftime('%Y-%m-%d')
     uid = uuid.uuid4().hex[:12]
@@ -120,21 +121,29 @@ def save_recording(pcm_frames: list, raw_text: str, corrected_text: str) -> dict
     audio_np = np.frombuffer(b''.join(pcm_frames), dtype='<i2').astype(np.float32) / 32767.0
     sf.write(str(audio_path), audio_np, ASR_RATE, subtype='PCM_16')
 
-    is_improved = bool(corrected_text and corrected_text.strip() != raw_text.strip())
     record = {
         'uuid': uid,
         'timestamp': ts.isoformat(),
         'audio_path': str(audio_path),
+        'transcript_path': str(transcript_path),
         'raw_transcription': raw_text,
         'corrected_transcription': corrected_text if corrected_text else raw_text,
         'is_improved': is_improved,
+        'categories': categories or [],
         'whisper_model': WHISPER_MODEL,
         'llm_model': LLM_MODEL if is_improved else None,
         'duration_s': round(len(audio_np) / ASR_RATE, 3),
         'sample_rate': ASR_RATE,
     }
+
+    # Write individual transcript JSON
     with open(transcript_path, 'w') as f:
         json.dump(record, f, indent=2)
+
+    # Append a compact line to the manifest (newline-delimited JSON)
+    manifest_path = STORAGE_BASE / 'manifest.jsonl'
+    with open(manifest_path, 'a') as f:
+        f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
     return record
 
@@ -241,20 +250,29 @@ async def main(save: bool, show_raw: bool, debug: bool):
             print('\r' + ' ' * 80 + '\r', end='', flush=True)
 
             corrected_text = raw_text
-            if USE_LLM:
-                try:
-                    corrected_text = lemonade_llm_correct(raw_text, model=LLM_MODEL)
-                except Exception as e:
-                    print(f"  ⚠️  LLM correction failed: {e}")
+            is_improved = False
+            categories: list = []
 
-            if show_raw and corrected_text != raw_text:
+            if USE_LLM:
+                llm_result = lemonade_llm_correct(raw_text, model=LLM_MODEL)
+                corrected_text = llm_result['corrected']
+                is_improved = llm_result['is_improved']
+                categories = llm_result.get('categories', [])
+                if 'error' in llm_result and debug:
+                    print(f"  ⚠️  LLM error: {llm_result['error']}")
+
+            if show_raw and is_improved:
                 print(f"  [RAW] {raw_text}")
-            print(f"  [ASR] {corrected_text}")
+            cats = f"  [{', '.join(categories)}]" if categories else ""
+            print(f"  [ASR] {corrected_text}{cats}")
 
             if save:
                 if pcm_buffer:
-                    record = save_recording(list(pcm_buffer), raw_text, corrected_text)
-                    print(f"  [SAVED] {record['audio_path']} ({record['duration_s']}s, improved={record['is_improved']})")
+                    record = save_recording(
+                        list(pcm_buffer), raw_text, corrected_text,
+                        is_improved=is_improved, categories=categories,
+                    )
+                    print(f"  [SAVED] {record['audio_path']} ({record['duration_s']}s)")
                     pcm_buffer.clear()
                 else:
                     print(f"  ⚠️  [SAVE SKIPPED] pcm_buffer is empty — no audio captured for this segment", flush=True)
