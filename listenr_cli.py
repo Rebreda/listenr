@@ -145,7 +145,12 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
     Captures at CAPTURE_RATE (from config) and resamples to ASR_RATE (16kHz) if needed.
     PipeWire and most USB mics require their native rate (e.g. 44100Hz); Lemonade always
     expects 16kHz PCM16, so we resample here before sending.
+
+    stream.read() is a blocking call (~85ms per chunk). We offload it to a thread pool
+    executor so it never blocks the asyncio event loop — otherwise _recv_messages in
+    stream_transcribe would never get a turn to process incoming WebSocket messages.
     """
+    loop = asyncio.get_event_loop()
     chunks_sent = 0
     with sd.InputStream(
         samplerate=CAPTURE_RATE,
@@ -160,7 +165,10 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
                   f"blocksize={CHUNK_SIZE} (~{CHUNK_SIZE/CAPTURE_RATE*1000:.0f}ms/chunk), "
                   f"device={stream.device}")
         while True:
-            audio_chunk, overflowed = stream.read(CHUNK_SIZE)
+            # Run the blocking read in a thread so the event loop stays free
+            audio_chunk, overflowed = await loop.run_in_executor(
+                None, stream.read, CHUNK_SIZE
+            )
             if overflowed and debug:
                 print("  [DEBUG] ⚠️  Mic buffer overflowed (CPU too slow?)")
             # audio_chunk shape: (blocksize, channels) — squeeze to 1D mono
