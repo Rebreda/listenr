@@ -20,12 +20,12 @@ DEFAULT_CONFIG = {
         'model': 'Whisper-Tiny',
     },
     'Audio': {
-        # Mic capture rate — use the device's native rate (e.g. 44100 for PipeWire/USB mics).
+        # Mic capture rate — must match the device's native rate.
         # listenr_cli.py resamples to 16kHz internally before sending to Lemonade /realtime.
-        'sample_rate': '44100',
+        'sample_rate': '48000',
         'channels': '1',
-        # Chunk size in frames per mic read. ~85ms at 44100Hz = 3749 frames
-        'blocksize': '3749',
+        # Chunk size in frames per mic read (~85ms worth of audio).
+        'blocksize': '4096',
         'input_device': 'pipewire',  # 'pipewire', device name, index, or 'default'
     },
     'Storage': {

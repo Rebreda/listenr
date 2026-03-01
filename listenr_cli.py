@@ -69,7 +69,7 @@ def get_lemonade_ws_url() -> str:
         ws_port = data.get('websocket_port', 8001)
         return f"ws://localhost:{ws_port}/realtime"
     except Exception as e:
-        print(f"⚠️  Could not discover Lemonade websocket port ({e}), using default :8001")
+        print(f"Could not discover Lemonade websocket port ({e}), using default :8001")
         return "ws://localhost:8001/realtime"
 
 
@@ -78,26 +78,26 @@ def ensure_models_loaded(debug: bool = False) -> None:
     Load the Whisper model (and optionally the LLM) via POST /api/v1/load.
     This is idempotent — Lemonade is a no-op if the model is already loaded.
     """
-    print(f"⏳ Loading Whisper model '{WHISPER_MODEL}' in Lemonade...", flush=True)
+    print(f"Loading Whisper model '{WHISPER_MODEL}' in Lemonade...", flush=True)
     try:
         result = lemonade_load_model(WHISPER_MODEL)
-        print(f"✅ Whisper: {result.get('message', result)}")
+        print(f"Whisper ready: {result.get('message', result)}")
     except requests.HTTPError as e:
-        print(f"❌ Failed to load Whisper model '{WHISPER_MODEL}': {e.response.text}")
+        print(f"ERROR: Failed to load Whisper model '{WHISPER_MODEL}': {e.response.text}")
         raise
     except Exception as e:
-        print(f"❌ Failed to load Whisper model '{WHISPER_MODEL}': {e}")
+        print(f"ERROR: Failed to load Whisper model '{WHISPER_MODEL}': {e}")
         raise
 
     if USE_LLM:
-        print(f"⏳ Loading LLM '{LLM_MODEL}' in Lemonade...", flush=True)
+        print(f"Loading LLM '{LLM_MODEL}' in Lemonade...", flush=True)
         try:
             result = lemonade_load_model(LLM_MODEL)
-            print(f"✅ LLM: {result.get('message', result)}")
+            print(f"LLM ready: {result.get('message', result)}")
         except requests.HTTPError as e:
-            print(f"⚠️  Failed to load LLM '{LLM_MODEL}': {e.response.text} — LLM correction disabled")
+            print(f"WARNING: Failed to load LLM '{LLM_MODEL}': {e.response.text} -- LLM correction disabled")
         except Exception as e:
-            print(f"⚠️  Failed to load LLM '{LLM_MODEL}': {e} — LLM correction disabled")
+            print(f"WARNING: Failed to load LLM '{LLM_MODEL}': {e} -- LLM correction disabled")
 
 
 async def mic_stream(pcm_buffer: list, debug: bool = False):
@@ -131,7 +131,7 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
                 None, stream.read, CHUNK_SIZE
             )
             if overflowed and debug:
-                print("  [DEBUG] ⚠️  Mic buffer overflowed (CPU too slow?)")
+                print("  [DEBUG] WARNING: Mic buffer overflowed (CPU too slow?)")
             # audio_chunk shape: (blocksize, channels) — squeeze to 1D mono
             mono = audio_chunk[:, 0] if audio_chunk.ndim > 1 else audio_chunk
             rms = float(np.sqrt(np.mean(mono ** 2)))
@@ -152,11 +152,11 @@ async def main(save: bool, show_raw: bool, debug: bool):
     ensure_models_loaded(debug=debug)
     ws_url = get_lemonade_ws_url()
     ws_url_with_model = f"{ws_url}?model={WHISPER_MODEL}"
-    print(f"🎤 Listenr CLI — streaming to Lemonade")
+    print(f"Listenr CLI -- streaming to Lemonade")
     print(f"   Model  : {WHISPER_MODEL}")
     print(f"   WS URL : {ws_url_with_model}")
     print(f"   LLM    : {'enabled (' + LLM_MODEL + ')' if USE_LLM else 'disabled'}")
-    print(f"   Save   : {'yes → ' + str(STORAGE_BASE) if save else 'no'}")
+    print(f"   Save   : {'yes -> ' + str(STORAGE_BASE) if save else 'no'}")
     print(f"   Debug  : {'on' if debug else 'off  (use --debug to enable)'}")
     print("   Press Ctrl+C to stop.\n")
 
@@ -202,7 +202,7 @@ async def main(save: bool, show_raw: bool, debug: bool):
             if is_hallucination(raw_text):
                 print('\r' + ' ' * 80 + '\r', end='', flush=True)
                 if debug:
-                    print(f"  [DEBUG] 🚫 hallucination dropped: {raw_text!r}", flush=True)
+                    print(f"  [DEBUG] hallucination dropped: {raw_text!r}", flush=True)
                 pcm_buffer.clear()
                 continue
 
@@ -210,11 +210,11 @@ async def main(save: bool, show_raw: bool, debug: bool):
             if not stripped_text:
                 print('\r' + ' ' * 80 + '\r', end='', flush=True)
                 if debug:
-                    print(f"  [DEBUG] 🚫 all-noise stripped: {raw_text!r}", flush=True)
+                    print(f"  [DEBUG] all-noise stripped: {raw_text!r}", flush=True)
                 pcm_buffer.clear()
                 continue
             if stripped_text != raw_text and debug:
-                print(f"  [DEBUG] 🔇 noise tags stripped: {raw_text!r} → {stripped_text!r}", flush=True)
+                print(f"  [DEBUG] noise tags stripped: {raw_text!r} -> {stripped_text!r}", flush=True)
             raw_text = stripped_text
             # ─────────────────────────────────────────────────────────────────
 
@@ -231,7 +231,7 @@ async def main(save: bool, show_raw: bool, debug: bool):
                 is_improved = llm_result['is_improved']
                 categories = llm_result.get('categories', [])
                 if 'error' in llm_result and debug:
-                    print(f"  ⚠️  LLM error: {llm_result['error']}")
+                    print(f"  WARNING: LLM error: {llm_result['error']}")
 
             if show_raw and is_improved:
                 print(f"  [RAW] {raw_text}")
@@ -252,15 +252,15 @@ async def main(save: bool, show_raw: bool, debug: bool):
                     print(f"  [SAVED] {record['audio_path']} ({record['duration_s']}s)")
                     pcm_buffer.clear()
                 else:
-                    print(f"  ⚠️  [SAVE SKIPPED] pcm_buffer is empty — no audio captured for this segment", flush=True)
+                    print(f"  WARNING: pcm_buffer is empty -- no audio captured for this segment", flush=True)
 
         elif msg_type == 'input_audio_buffer.speech_started':
             if debug:
-                print(f"  [DEBUG] 🗣  speech_started — clearing pcm_buffer (had {len(pcm_buffer)} chunks)", flush=True)
+                print(f"  [DEBUG] speech_started -- clearing pcm_buffer (had {len(pcm_buffer)} chunks)", flush=True)
             pcm_buffer.clear()  # start fresh buffer for this segment
 
         elif msg_type == 'error':
-            print(f"  ❌ Error from Lemonade: {result.get('message', result)}")
+            print(f"  ERROR: {result.get('message', result)}")
 
 
 if __name__ == '__main__':
@@ -273,10 +273,10 @@ if __name__ == '__main__':
     try:
         asyncio.run(main(save=not args.no_save, show_raw=args.show_raw, debug=args.debug))
     except KeyboardInterrupt:
-        print("\n⏳ Unloading models from Lemonade...", flush=True)
+        print("\nUnloading models from Lemonade...", flush=True)
         result = lemonade_unload_models()
         if 'error' in result:
-            print(f"  ⚠️  Unload failed: {result['error']}")
+            print(f"  WARNING: Unload failed: {result['error']}")
         else:
-            print(f"  ✅ Models unloaded.")
-        print("👋 Stopped.")
+            print(f"  Models unloaded.")
+        print("Stopped.")

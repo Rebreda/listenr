@@ -23,7 +23,7 @@ jobs:
         run: sudo apt-get install -y --no-install-recommends libportaudio2 libsndfile1
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest
+        run: pip install ".[dev]"
 
       - name: Run tests
         run: python -m pytest tests/ -v
