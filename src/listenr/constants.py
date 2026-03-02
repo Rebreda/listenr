@@ -2,8 +2,7 @@
 constants.py — Typed, config-backed constants for the listenr package.
 
 All values are read **once** at import time from ``~/.config/listenr/config.ini``
-(via :mod:`listenr.config_manager`).  This is intentional: listenr is a CLI tool
-that starts fresh for every invocation, so reading once at startup is correct.
+(via :mod:`listenr.config_manager`).  
 
 Downstream modules should import individual names::
 
