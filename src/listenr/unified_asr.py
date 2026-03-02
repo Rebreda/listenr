@@ -20,8 +20,14 @@ import requests
 import websockets
 import asyncio
 
-import listenr.config_manager as cfg
 from listenr.llm_processor import lemonade_llm_correct, lemonade_transcribe_audio
+from listenr.constants import (
+    LLM_API_BASE,
+    VAD_THRESHOLD,
+    VAD_SILENCE_MS,
+    VAD_PREFIX_PADDING_MS,
+    WHISPER_MODEL as _DEFAULT_WHISPER_MODEL,
+)
 
 logger = logging.getLogger('unified_asr')
 
@@ -72,11 +78,10 @@ class LemonadeUnifiedASR:
         import base64
 
         if whisper_model is None:
-            whisper_model = cfg.get_setting('Whisper', 'model', 'Whisper-Large-v3-Turbo')
+            whisper_model = _DEFAULT_WHISPER_MODEL
         if lemonade_ws_url is None:
-            api_base = cfg.get_setting('LLM', 'api_base', 'http://localhost:8000/api/v1') or 'http://localhost:8000/api/v1'
             try:
-                resp = requests.get(f"{api_base}/health", timeout=5)
+                resp = requests.get(f"{LLM_API_BASE}/health", timeout=5)
                 ws_port = resp.json().get('websocket_port', 8001)
             except Exception:
                 ws_port = 8001
@@ -87,9 +92,9 @@ class LemonadeUnifiedASR:
             "session": {
                 "model": whisper_model,
                 "turn_detection": {
-                    "threshold": cfg.get_float_setting('VAD', 'threshold', 0.01),
-                    "silence_duration_ms": cfg.get_int_setting('VAD', 'silence_duration_ms', 800),
-                    "prefix_padding_ms": cfg.get_int_setting('VAD', 'prefix_padding_ms', 250),
+                    "threshold": VAD_THRESHOLD,
+                    "silence_duration_ms": VAD_SILENCE_MS,
+                    "prefix_padding_ms": VAD_PREFIX_PADDING_MS,
                 },
             },
         }

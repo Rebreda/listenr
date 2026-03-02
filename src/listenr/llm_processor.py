@@ -7,8 +7,14 @@ import json
 import re
 import requests
 import listenr.config_manager as cfg
-
-_DEFAULT_API_BASE = "http://localhost:8000/api/v1"
+from listenr.constants import (
+    LLM_API_BASE as _DEFAULT_API_BASE,
+    LLM_MAX_TOKENS,
+    LLM_MODEL,
+    LLM_TEMPERATURE,
+    LLM_TIMEOUT,
+    WHISPER_MODEL,
+)
 
 # System prompt for transcription post-processing.
 # The model must return ONLY a JSON object — no prose, no markdown fences.
@@ -139,11 +145,11 @@ def lemonade_llm_correct(
     Never raises — on failure returns the original text with is_improved=False.
     """
     if model is None:
-        model = cfg.get_setting('LLM', 'model', 'gpt-oss-20b-mxfp4-GGUF')
+        model = LLM_MODEL
 
-    temperature = cfg.get_float_setting('LLM', 'temperature', 0.1)
-    max_tokens = cfg.get_int_setting('LLM', 'max_tokens', 1500)
-    timeout = cfg.get_int_setting('LLM', 'timeout', 30)
+    temperature = LLM_TEMPERATURE
+    max_tokens = LLM_MAX_TOKENS
+    timeout = LLM_TIMEOUT
 
     # Build message list: system + interleaved context turns + current segment
     messages: list[dict] = [{"role": "system", "content": _CORRECTION_SYSTEM_PROMPT}]
@@ -184,7 +190,7 @@ def lemonade_transcribe_audio(audio_path, model=None):
     Use Lemonade's HTTP transcription endpoint for audio files.
     """
     if model is None:
-        model = cfg.get_setting('Whisper', 'model', 'Whisper-Tiny')
+        model = WHISPER_MODEL
     with open(audio_path, "rb") as f:
         resp = requests.post(
             f"{_api_base()}/audio/transcriptions",
