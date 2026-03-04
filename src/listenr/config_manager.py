@@ -61,6 +61,7 @@ DEFAULT_CONFIG = {
         'min_chars': '2',                     # Minimum non-whitespace chars in transcription
         'seed': '42',                         # Random seed for reproducible splits
         'format': 'csv',                      # Output format: csv, hf, or both
+        'strip_tags': 'true',                 # Strip parenthesised sound tags e.g. (music) from transcripts
     },
     'Output': {
         'file': '~/transcripts_raw.txt',

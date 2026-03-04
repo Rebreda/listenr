@@ -104,6 +104,7 @@ DATASET_SPLIT: str = cfg.get_setting("Dataset", "split", "80/10/10") or "80/10/1
 DATASET_MIN_DURATION: float = cfg.get_float_setting("Dataset", "min_duration", 0.3)
 DATASET_MIN_CHARS: int = cfg.get_int_setting("Dataset", "min_chars", 2)
 DATASET_SEED: int = cfg.get_int_setting("Dataset", "seed", 42)
+DATASET_STRIP_TAGS: bool = cfg.get_bool_setting("Dataset", "strip_tags", True)
 
 _VALID_DATASET_FORMATS: frozenset[str] = frozenset({"csv", "hf", "both"})
 _raw_dataset_format: str = cfg.get_setting("Dataset", "format", "csv") or "csv"
