@@ -62,6 +62,27 @@ DEFAULT_CONFIG = {
         'seed': '42',                         # Random seed for reproducible splits
         'format': 'csv',                      # Output format: csv, hf, or both
     },
+    'Finetune': {
+        'base_model': 'openai/whisper-small',  # HuggingFace model id to fine-tune
+        'language': 'english',                 # Target language for the processor/tokenizer
+        'task': 'transcribe',                  # 'transcribe' or 'translate'
+        'lora_r': '8',                         # LoRA rank
+        'lora_alpha': '32',                    # LoRA scaling factor
+        'lora_dropout': '0.1',                 # LoRA dropout
+        'lora_target_modules': 'q_proj,v_proj', # Comma-separated decoder attention projections
+        'freeze_encoder': 'true',              # Freeze Whisper encoder weights during training
+        'learning_rate': '1e-4',               # AdamW learning rate
+        'warmup_steps': '100',
+        'max_steps': '2000',
+        'batch_size': '8',                     # Per-device train batch size
+        'grad_accum_steps': '2',               # Gradient accumulation steps
+        'fp16': 'false',                       # Mixed precision fp16 (CUDA; use bf16 for AMD ROCm)
+        'bf16': 'false',                       # Mixed precision bf16 (recommended for AMD ROCm RDNA2+)
+        'output_dir': '~/listenr_finetune',    # Where adapter checkpoints are saved
+        'eval_steps': '200',                   # Evaluate every N training steps
+        'save_steps': '400',                   # Save checkpoint every N training steps
+        'generation_max_length': '128',        # Max decode length during evaluation
+    },
     'Output': {
         'file': '~/transcripts_raw.txt',
         'llm_file': '~/transcripts_clean.txt',
