@@ -6,7 +6,7 @@ Provides a factory that returns a ``compute_metrics`` closure compatible with
 
 Requires the ``finetune`` optional dependencies::
 
-    uv pip install "listenr[finetune]"
+    uv pip install -e ".[finetune]"
 
 Public API
 ----------
@@ -43,7 +43,7 @@ def make_compute_metrics(tokenizer: Any) -> Callable:
     except ImportError:
         print(
             "ERROR: evaluate is required. Install with:\n"
-            "  uv pip install \"listenr[finetune]\"",
+            "  uv pip install -e \".[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)

@@ -137,6 +137,8 @@ class TestMakeComputeMetrics:
     def test_result_wer_is_scaled_to_percent(self, mock_evaluate):
         """WER should be stored as a percentage (metric returns 0–1, we multiply by 100)."""
         _, metric = mock_evaluate
+        # Clear the fixture's side_effect so return_value is actually used.
+        metric.compute.side_effect = None
         metric.compute.return_value = 0.35  # 35%
 
         from listenr.finetune.metrics import make_compute_metrics

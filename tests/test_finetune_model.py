@@ -28,7 +28,8 @@ class TestMakeLoraConfig:
         assert cfg.r == 4
         assert cfg.lora_alpha == 16
         assert cfg.lora_dropout == 0.05
-        assert cfg.target_modules == ["q_proj"]
+        # PEFT stores target_modules as a set in newer versions.
+        assert set(cfg.target_modules) == {"q_proj"}
 
     def test_task_type_is_seq2seq(self):
         peft = pytest.importorskip("peft")

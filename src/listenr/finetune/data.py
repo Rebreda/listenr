@@ -6,7 +6,7 @@ easy to test and reuse.
 
 Requires the ``finetune`` optional dependencies::
 
-    uv pip install "listenr[finetune]"
+    uv pip install -e ".[finetune]"
 
 Public API
 ----------
@@ -49,7 +49,7 @@ def make_processor(model_id: str, language: str, task: str) -> "WhisperProcessor
     except ImportError:
         print(
             "ERROR: transformers is required. Install with:\n"
-            "  uv pip install \"listenr[finetune]\"",
+            "  uv pip install -e \".[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -105,7 +105,7 @@ def make_dataset(hf_dataset_path: Path, processor: Any) -> Any:
     except ImportError:
         print(
             "ERROR: datasets is required. Install with:\n"
-            "  uv pip install \"listenr[finetune]\"",
+            "  uv pip install -e \".[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -151,7 +151,7 @@ class WhisperDataCollator:
         except ImportError:
             print(
                 "ERROR: torch is required. Install with:\n"
-                "  uv pip install \"listenr[finetune]\"",
+                "  uv pip install -e \".[finetune]\"",
                 file=sys.stderr,
             )
             sys.exit(1)

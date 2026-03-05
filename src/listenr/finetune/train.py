@@ -173,7 +173,7 @@ def main() -> None:
     except ImportError:
         print(
             "ERROR: transformers is required. Install with:\n"
-            "  uv pip install \"listenr[finetune]\"",
+            "  uv pip install -e \".[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)

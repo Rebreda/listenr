@@ -6,7 +6,7 @@ isolation.
 
 Requires the ``finetune`` optional dependencies::
 
-    uv pip install "listenr[finetune]"
+    uv pip install -e ".[finetune]"
 
 Public API
 ----------
@@ -38,7 +38,7 @@ def load_base_model(model_id: str) -> Any:
     except ImportError:
         print(
             "ERROR: transformers is required. Install with:\n"
-            "  uv pip install \"listenr[finetune]\"",
+            "  uv pip install -e \".[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -78,7 +78,7 @@ def make_lora_config(
     except ImportError:
         print(
             "ERROR: peft is required. Install with:\n"
-            "  uv pip install \"listenr[finetune]\"",
+            "  uv pip install -e \".[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -109,7 +109,7 @@ def apply_lora(model: Any, lora_config: Any) -> Any:
     except ImportError:
         print(
             "ERROR: peft is required. Install with:\n"
-            "  uv pip install \"listenr[finetune]\"",
+            "  uv pip install -e \".[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
