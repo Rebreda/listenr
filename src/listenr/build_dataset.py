@@ -30,6 +30,7 @@ import random
 import sys
 from pathlib import Path
 
+from listenr.transcript_utils import strip_noise_tags
 from listenr.constants import (
     DATASET_FORMAT,
     DATASET_MIN_CHARS,
@@ -37,6 +38,7 @@ from listenr.constants import (
     DATASET_OUTPUT,
     DATASET_SEED,
     DATASET_SPLIT,
+    DATASET_STRIP_TAGS,
     STORAGE_BASE,
 )
 
@@ -53,6 +55,7 @@ DEFAULT_MIN_DURATION = DATASET_MIN_DURATION
 DEFAULT_MIN_CHARS    = DATASET_MIN_CHARS
 DEFAULT_SEED         = DATASET_SEED
 DEFAULT_FORMAT       = DATASET_FORMAT
+DEFAULT_STRIP_TAGS   = DATASET_STRIP_TAGS
 
 CSV_COLUMNS = [
     "uuid",
@@ -99,8 +102,16 @@ def validate_entry(
     data: dict,
     min_duration: float,
     min_chars: int,
+    strip_tags: bool = True,
 ) -> dict | None:
-    """Validate a manifest record; return None if it fails."""
+    """Validate a manifest record; return None if it fails.
+
+    Parameters
+    ----------
+    strip_tags : if True, parenthesised/bracketed noise tags such as (music) or
+                 [Applause] are stripped from both transcription fields before
+                 validation and output.
+    """
     for field in ("uuid", "raw_transcription", "audio_path"):
         if not data.get(field):
             logger.debug(f"Skipping record {data.get('uuid', '?')}: missing field '{field}'")
@@ -111,9 +122,16 @@ def validate_entry(
         logger.debug(f"Skipping {data['uuid']}: duration {duration:.2f}s < {min_duration}s")
         return None
 
-    transcript = (data.get("corrected_transcription") or data.get("raw_transcription") or "").strip()
-    if len(transcript.replace(" ", "")) < min_chars:
-        logger.debug(f"Skipping {data['uuid']}: transcript too short")
+    raw = data.get("raw_transcription", "") or ""
+    corrected = data.get("corrected_transcription") or raw
+
+    if strip_tags:
+        raw = strip_noise_tags(raw).strip()
+        corrected = strip_noise_tags(corrected).strip()
+
+    # Use the raw transcription for the min_chars check (authoritative source)
+    if len(raw.replace(" ", "")) < min_chars:
+        logger.debug(f"Skipping {data['uuid']}: transcript too short after tag stripping")
         return None
 
     audio_path = Path(data["audio_path"]).expanduser()
@@ -124,8 +142,8 @@ def validate_entry(
     return {
         "uuid": data.get("uuid", ""),
         "audio_path": str(audio_path.resolve()),
-        "raw_transcription": data.get("raw_transcription", ""),
-        "corrected_transcription": data.get("corrected_transcription") or data.get("raw_transcription", ""),
+        "raw_transcription": raw,
+        "corrected_transcription": corrected,
         "is_improved": str(data.get("is_improved", False)).lower() == "true",
         "duration_s": duration,
         "sample_rate": int(data.get("sample_rate") or 16000),
@@ -285,6 +303,12 @@ def main() -> None:
         help=f"Output format: csv, hf (HuggingFace datasets), or both (default: from config, currently {DEFAULT_FORMAT})",
     )
     parser.add_argument(
+        "--no-strip-tags",
+        action="store_true",
+        default=not DEFAULT_STRIP_TAGS,
+        help="Preserve parenthesised/bracketed noise tags (e.g. (music)) in transcriptions",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print stats and exit without writing files",
@@ -306,7 +330,7 @@ def main() -> None:
     entries = []
     skipped = 0
     for rec in records:
-        entry = validate_entry(rec, args.min_duration, args.min_chars)
+        entry = validate_entry(rec, args.min_duration, args.min_chars, strip_tags=not args.no_strip_tags)
         if entry:
             entries.append(entry)
         else:

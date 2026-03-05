@@ -117,6 +117,7 @@ if _raw_dataset_format not in _VALID_DATASET_FORMATS:
     )
     _raw_dataset_format = "csv"
 DATASET_FORMAT: str = _raw_dataset_format
+DATASET_STRIP_TAGS: bool = cfg.get_bool_setting("Dataset", "strip_tags", True)
 
 # ---------------------------------------------------------------------------
 # Output / transcript files
