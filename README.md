@@ -188,7 +188,7 @@ Adjust `[VAD] silence_duration_ms` and `threshold` in your config.
 
 | Model | Type | Notes |
 |---|---|---|
-| `Whisper-Tiny` | ASR | Fast, lower accuracy |
+| `Whisper-Base` | ASR | Fast, lower accuracy |
 | `Whisper-Large-v3-Turbo` | ASR | Best accuracy |
 | `gpt-oss-20b-mxfp4-GGUF` | LLM | Good correction quality |
 | `Gemma-3-4b-it-GGUF` | LLM | Lighter alternative |

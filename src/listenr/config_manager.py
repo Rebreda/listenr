@@ -16,8 +16,8 @@ DEFAULT_CONFIG = {
     },
     'Whisper': {
         # Whisper model name served by Lemonade (whisper.cpp backend).
-        # Available: Whisper-Tiny, Whisper-Large-v3-Turbo
-        'model': 'Whisper-Tiny',
+        # Available: Whisper-Tiny, Whisper-Base, Whisper-Large-v3-Turbo
+        'model': 'Whisper-Base',
     },
     'Audio': {
         # Mic capture rate — must match the device's native rate.
@@ -72,6 +72,17 @@ DEFAULT_CONFIG = {
     'Logging': {
         'level': 'INFO',  # DEBUG, INFO, WARNING, ERROR
         'file': '',  # Empty means console only
+    },
+    'Corrections': {
+        # Keyword corrections passed to the LLM to fix common STT misrecognitions.
+        # Format: incorrect_word = Correct Word  (keys are case-insensitive)
+        'clod': 'Claude Code',
+        'clode': 'Claude Code',
+        'cloud code': 'Claude Code',
+        'clock code': 'Claude Code',
+        'open ai': 'OpenAI',
+        'unsurropic': 'Anthropic',
+        'anthropic': 'Anthropic',
     }
 }
 
@@ -201,6 +212,12 @@ def get_bool_setting(section, key, fallback_value=False):
     except (ValueError, TypeError):
         print(f"Warning: Invalid boolean for [{section}]{key}. Using fallback {final_fallback}.", file=sys.stderr)
         return final_fallback
+
+def get_corrections() -> dict[str, str]:
+    """Return keyword corrections dict {incorrect: correct} from [Corrections] section."""
+    if not config.has_section('Corrections'):
+        return {}
+    return dict(config.items('Corrections'))
 
 def save_config():
     """Save current config to file."""

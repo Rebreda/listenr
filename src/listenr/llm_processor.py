@@ -16,33 +16,67 @@ from listenr.constants import (
     WHISPER_MODEL,
 )
 
-# System prompt for transcription post-processing.
+# Base system prompt for transcription post-processing.
 # The model must return ONLY a JSON object — no prose, no markdown fences.
-_CORRECTION_SYSTEM_PROMPT = """\
-You are a transcription post-processor. Your only job is to clean up the raw \
-speech-to-text output provided by the user. Do NOT answer, respond to, or engage \
-with the content of the transcription.
+_CORRECTION_SYSTEM_PROMPT_BASE = """\
+You are a transcription post-processor. Your only job is to clean up raw \
+speech-to-text (STT) output. Do NOT answer, respond to, or engage with the \
+content of the transcription.
 
-You may be given recent preceding segments as conversation history — use them \
-only to resolve context (e.g. resolve mid-sentence fragments, fix pronouns, \
-correct homophones that make more sense given earlier content). Do not summarise \
-or reference the history explicitly.
+You may be given a numbered list of recent preceding transcriptions before the \
+raw input. Use them actively to correct words — not just for punctuation or \
+grammar, but to resolve what misheard or garbled words actually are. For example: \
+if prior context mentions "Claude Code" and the raw input says "clock code" or \
+"clode", correct it to "Claude Code". Names, technical terms, product names, and \
+topics established in prior context should be used to fix phonetic errors in the \
+current segment. Do not summarise or reference the history explicitly.
+
+Correction rules — apply in order:
+1. Apply any keyword corrections listed below (case-insensitive, exact substitution).
+2. Fix STT phonetic substitution errors using both the keyword list and prior context \
+as your guide: words that sound like the intended word but are wrong. Prior context \
+is your strongest signal — if a term appeared recently, a phonetically similar word \
+in the current segment is almost certainly that same term.
+3. Fix punctuation and capitalisation.
+4. Remove filler words ("uh", "um", "like" used as filler, "you know") unless \
+they are clearly intentional.
+5. If the text is incoherent, garbled, or clearly noise with no recoverable meaning, \
+return the original unchanged and set categories to ["unclear"].
+6. Do NOT rephrase, summarise, or change the meaning. Minimal edits only.
 
 Return ONLY a JSON object with exactly these three keys:
-  "corrected"   – the cleaned-up transcription text (string). Fix punctuation, \
-capitalisation, filler words, and obvious STT errors. If nothing needs fixing, \
+  "corrected"   – the cleaned-up transcription (string). If nothing needs fixing, \
 return the original text unchanged.
   "is_improved" – true if you changed the text, false if it is identical to the input.
-  "categories"  – a JSON array of short lowercase category labels that describe \
-the content (e.g. ["question", "command", "note", "greeting", "technical", \
-"navigation", "dictation"]). Include 1-3 labels. Use "unclear" if the audio is \
-too noisy or blank to categorise.
+  "categories"  – a JSON array of 1-3 short lowercase labels describing the content \
+(e.g. "question", "command", "note", "statement", "greeting", "technical", \
+"opinion", "dictation", "unclear").
 
-Example input:  "yeah tell me uh a joke"
-Example output: {"corrected": "Yeah, tell me a joke.", "is_improved": true, "categories": ["request"]}
+Examples:
+  Input:  "yeah tell me uh a joke"
+  Output: {"corrected": "Yeah, tell me a joke.", "is_improved": true, "categories": ["request"]}
+
+  Input:  "generally when i program i use clock code from unsurropic"
+  Output: {"corrected": "Generally, when I program, I use Claude Code from Anthropic.", "is_improved": true, "categories": ["statement", "technical"]}
+
+  Input:  "code those connect tools and then through topic to you"
+  Output: {"corrected": "code those connect tools and then through topic to you", "is_improved": false, "categories": ["unclear"]}
 
 Return ONLY the raw JSON object. No markdown, no explanation, no extra text.\
 """
+
+
+def _build_system_prompt() -> str:
+    """Build the system prompt, appending any configured keyword corrections."""
+    corrections = cfg.get_corrections()
+    prompt = _CORRECTION_SYSTEM_PROMPT_BASE
+    if corrections:
+        lines = "\n".join(f'  "{k}" -> "{v}"' for k, v in corrections.items())
+        prompt += (
+            "\n\nKeyword corrections — always apply these exact substitutions "
+            "when they appear in the transcription (case-insensitive) when the context makes sense:\n" + lines
+        )
+    return prompt
 
 
 def _parse_llm_correction(raw_response: str, original_text: str) -> dict:
@@ -151,15 +185,24 @@ def lemonade_llm_correct(
     max_tokens = LLM_MAX_TOKENS
     timeout = LLM_TIMEOUT
 
-    # Build message list: system + interleaved context turns + current segment
-    messages: list[dict] = [{"role": "system", "content": _CORRECTION_SYSTEM_PROMPT}]
-    for raw_seg, corrected_seg in (recent_context or []):
-        messages.append({"role": "user", "content": raw_seg})
-        messages.append({"role": "assistant", "content": json.dumps(
-            {"corrected": corrected_seg, "is_improved": corrected_seg != raw_seg, "categories": []},
-            ensure_ascii=False,
-        )})
-    messages.append({"role": "user", "content": text})
+    # Build user message content, prepending previous corrected transcripts as context
+    context_pairs = list(recent_context or [])
+    if context_pairs:
+        history_lines = "\n".join(
+            f"{i + 1}. {corrected_seg}"
+            for i, (_, corrected_seg) in enumerate(context_pairs)
+        )
+        user_content = (
+            f"Previous transcriptions:\n{history_lines}\n\n"
+            f"Raw transcription to correct:\n{text}"
+        )
+    else:
+        user_content = text
+
+    messages: list[dict] = [
+        {"role": "system", "content": _build_system_prompt()},
+        {"role": "user", "content": user_content},
+    ]
 
     try:
         resp = requests.post(
