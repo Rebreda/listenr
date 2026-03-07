@@ -25,6 +25,7 @@ finetune = [
     "datasets",
     "evaluate",
     "jiwer",
+    "tensorboard",
 ]
 
 [project.scripts]
