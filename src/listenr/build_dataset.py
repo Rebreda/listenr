@@ -318,7 +318,7 @@ def main() -> None:
             "Rewrite the leading path component of every audio_path in the manifest. "
             "Useful when running inside a container where the host path is mounted at "
             "a different location. Example: "
-            "--remap-audio-prefix /home/g/.listenr/audio_clips:/data/listenr/audio_clips"
+            "--remap-audio-prefix /home/you/.listenr/audio_clips:/data/listenr/audio_clips"
         ),
     )
     parser.add_argument(
