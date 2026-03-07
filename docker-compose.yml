@@ -22,18 +22,25 @@ services:
       - seccomp=unconfined
     ipc: host
     devices:
-      - /dev/kfd        # AMD GPU compute
-      - /dev/dri        # AMD GPU render
+      - /dev/kfd
+      - /dev/dri/card0
+      - /dev/dri/card1
+      - /dev/dri/renderD128
+      - /dev/dri/renderD129
+    # keep-groups passes the host user's actual supplementary GIDs (render, video)
+    # into the container, bypassing the GID name→number mismatch between the
+    # Ubuntu-based image (render=991, video=44) and the host (render=105, video=39).
     group_add:
-      - video
-      - render
+      - keep-groups
     environment:
       # Pin to one GPU to avoid imbalance warnings/segfaults on multi-GPU systems.
       # Set to "0,1" to use both GPUs if they are matched.
       HIP_VISIBLE_DEVICES: "${HIP_VISIBLE_DEVICES:-0}"
-      # Override if your GPU's gfx version isn't natively supported by ROCm.
-      # Leave blank to let ROCm auto-detect.
-      HSA_OVERRIDE_GFX_VERSION: "${HSA_OVERRIDE_GFX_VERSION:-}"
+      # Only set HSA_OVERRIDE_GFX_VERSION if your GPU needs it.
+      # An empty string is NOT the same as unset — it causes ROCm to fail.
+      # Uncomment in .env only if needed:
+      #   HSA_OVERRIDE_GFX_VERSION=10.3.0  (RX 6000 / RDNA2)
+      #   HSA_OVERRIDE_GFX_VERSION=11.0.0  (RX 7000 / RDNA3)
     volumes:
       # HF dataset produced by build-dataset (DATASET_OUTPUT default: ~/listenr_dataset)
       - "${LISTENR_DATASET:-${HOME}/listenr_dataset}:/data/dataset"

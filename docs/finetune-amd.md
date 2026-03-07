@@ -22,9 +22,14 @@ to get a working GPU environment.
 
 ## 1. Pull the image
 
+Use the specific AMD-tested stable tag rather than `latest`:
+
 ```bash
-podman pull rocm/pytorch:latest
+podman pull rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
 ```
+
+> The `latest` tag can point to an untested or preview build. The versioned
+> tag is what AMD validates and documents.
 
 ---
 
@@ -44,6 +49,12 @@ podman run -it \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     --ipc=host \
+    --device=/dev/kfd \
+    --device=/dev/dri/card0 \
+    --device=/dev/dri/card1 \
+    --device=/dev/dri/renderD128 \
+    --device=/dev/dri/renderD129 \
+    --group-add keep-groups \
     -v ~/.listenr:/data/listenr \
     -v ~/listenr_dataset:/data/dataset \
     -w /app \
@@ -65,7 +76,10 @@ From the repo root:
 podman build -t listenr-rocm .
 ```
 
-This installs `listenr` with all `[finetune]` extras on top of `rocm/pytorch:latest`.
+This installs `listenr` with all `[finetune]` extras on top of
+`rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1`.
+The ROCm-aware PyTorch wheel is pinned during the build so `pip` cannot
+replace it with a CPU-only build from PyPI.
 
 ---
 
@@ -76,8 +90,11 @@ podman run -it \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     --device=/dev/kfd \
-    --device=/dev/dri \
-    --group-add video \
+    --device=/dev/dri/card0 \
+    --device=/dev/dri/card1 \
+    --device=/dev/dri/renderD128 \
+    --device=/dev/dri/renderD129 \
+    --group-add keep-groups \
     --ipc=host \
     -e HIP_VISIBLE_DEVICES=0 \
     -v ~/listenr_dataset:/data/dataset \
@@ -138,11 +155,18 @@ If you have multiple GPUs, pin to one to avoid imbalance issues:
 -e HIP_VISIBLE_DEVICES=0   # use GPU 0 only
 ```
 
-Check GPU IDs and memory:
+Check GPU IDs, names, and memory:
 
 ```bash
 rocm-smi
 ```
+
+> **Note on `--group-add keep-groups`:** The `rocm/pytorch` image uses an
+> Ubuntu base with different GIDs for the `render` and `video` groups than
+> Fedora/RHEL hosts. Passing `--group-add render` resolves to the wrong GID
+> inside the container, so the process can't access `/dev/kfd`. `keep-groups`
+> passes the host user's actual numeric supplementary GIDs directly,
+> bypassing the name→GID mismatch entirely.
 
 ---
 

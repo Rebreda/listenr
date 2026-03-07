@@ -63,7 +63,24 @@ Usually caused by GPU imbalance on a multi-GPU system. Restrict to one GPU:
 -e HIP_VISIBLE_DEVICES=0
 ```
 
-### `HSA_STATUS_ERROR_INVALID_ISA` or GPU not detected in container
+### `torch.cuda.is_available()` returns False in built image but True in base image
+
+Two known causes:
+
+1. **`HSA_OVERRIDE_GFX_VERSION` set to empty string** — an empty string is not
+   the same as unset and causes ROCm to fail silently. Never set this variable
+   unless you have a specific gfx version to override; omit it entirely otherwise.
+
+2. **pip replaced the ROCm torch wheel with a CPU-only build** — installs of
+   `transformers` or other packages can pull a vanilla `torch` from PyPI as a
+   dependency, silently replacing the ROCm wheel. The `Dockerfile` guards
+   against this with a `pip freeze` constraint file before installing extras.
+   Verify with: `python3 -c "import torch; print(torch.version.hip)"`
+   — if this prints `None`, the ROCm wheel was replaced.
+
+3. **Using `rocm/pytorch:latest`** — the `latest` tag can point to a preview
+   or less-tested build. Use the specific stable tag:
+   `rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1`
 
 Your GPU's gfx version may not be natively supported by the ROCm version in the
 image. Override it:
