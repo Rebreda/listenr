@@ -1,0 +1,82 @@
+# docker-compose.yml — Listenr AMD ROCm fine-tuning
+#
+# Usage (requires podman-compose or docker compose):
+#   podman compose build
+#   podman compose run --rm finetune            # fine-tune with defaults
+#   podman compose run --rm finetune --bf16 --max-steps 500
+#   podman compose run --rm build-dataset       # build HF dataset from manifest
+#
+# GPU passthrough requires the ROCm driver on the host.
+# Copy .env.example to .env and edit values to suit your system.
+
+services:
+
+  # ── fine-tune Whisper with LoRA ────────────────────────────────────────────
+  finetune:
+    build: .
+    image: listenr-rocm
+    # Required for ROCm GPU access and stability
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp=unconfined
+    ipc: host
+    devices:
+      - /dev/kfd
+      - /dev/dri/card0
+      - /dev/dri/card1
+      - /dev/dri/renderD128
+      - /dev/dri/renderD129
+    # keep-groups passes the host user's actual supplementary GIDs (render, video)
+    # into the container, bypassing the GID name→number mismatch between the
+    # Ubuntu-based image (render=991, video=44) and the host (render=105, video=39).
+    group_add:
+      - keep-groups
+    environment:
+      # Pin to one GPU to avoid imbalance warnings/segfaults on multi-GPU systems.
+      # Set to "0,1" to use both GPUs if they are matched.
+      HIP_VISIBLE_DEVICES: "${HIP_VISIBLE_DEVICES:-0}"
+      # Enables Flash Efficient / Memory Efficient attention on RDNA3+.
+      # Set to "" to disable (falls back to slower implementation with a warning).
+      TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: "${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-1}"
+      # Only set HSA_OVERRIDE_GFX_VERSION if your GPU needs it.
+      # An empty string is NOT the same as unset — it causes ROCm to fail.
+      # Uncomment in .env only if needed:
+      #   HSA_OVERRIDE_GFX_VERSION=10.3.0  (RX 6000 / RDNA2)
+      #   HSA_OVERRIDE_GFX_VERSION=11.0.0  (RX 7000 / RDNA3)
+    volumes:
+      # HF dataset produced by build-dataset (DATASET_OUTPUT default: ~/listenr_dataset)
+      - "${LISTENR_DATASET:-${HOME}/listenr_dataset}:/data/dataset"
+      # Adapter checkpoint output (FINETUNE_OUTPUT_DIR default: ~/listenr_finetune)
+      - "${LISTENR_FINETUNE:-${HOME}/listenr_finetune}:/data/adapter"
+      # HuggingFace model cache — avoids re-downloading on every run
+      - "${HF_CACHE:-${HOME}/.cache/huggingface}:/root/.cache/huggingface"
+    working_dir: /app
+    entrypoint: ["listenr-finetune"]
+    command:
+      - "--dataset=/data/dataset/hf_dataset"
+      - "--output=/data/adapter"
+      - "--bf16"
+
+  # ── build train/dev/test splits from manifest.jsonl ───────────────────────
+  build-dataset:
+    build: .
+    image: listenr-rocm
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp=unconfined
+    volumes:
+      # Audio clips + manifest.jsonl (STORAGE_BASE default: ~/.listenr/audio_clips)
+      - "${LISTENR_DATA:-${HOME}/.listenr}:/data/listenr"
+      # Dataset output (DATASET_OUTPUT default: ~/listenr_dataset)
+      - "${LISTENR_DATASET:-${HOME}/listenr_dataset}:/data/dataset"
+    working_dir: /app
+    entrypoint: ["listenr-build-dataset"]
+    command:
+      - "--manifest=/data/listenr/audio_clips/manifest.jsonl"
+      - "--output=/data/dataset"
+      - "--format=hf"
+      # Rewrites host absolute paths in manifest.jsonl to container paths.
+      # OLD is the host prefix stored in manifest entries; NEW is where it's mounted here.
+      - "--remap-audio-prefix=${HOME}/.listenr/audio_clips:/data/listenr/audio_clips"

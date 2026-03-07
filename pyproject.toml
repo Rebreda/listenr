@@ -18,10 +18,20 @@ dependencies = [
 dev = [
     "pytest",
 ]
+finetune = [
+    "transformers>=4.40",
+    "peft>=0.11",
+    "accelerate>=0.29",
+    "datasets",
+    "evaluate",
+    "jiwer",
+    "tensorboard",
+]
 
 [project.scripts]
 listenr = "listenr.cli:main"
 listenr-build-dataset = "listenr.build_dataset:main"
+listenr-finetune = "listenr.finetune.train:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

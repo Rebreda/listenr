@@ -120,6 +120,45 @@ DATASET_FORMAT: str = _raw_dataset_format
 DATASET_STRIP_TAGS: bool = cfg.get_bool_setting("Dataset", "strip_tags", True)
 
 # ---------------------------------------------------------------------------
+# Finetune
+# ---------------------------------------------------------------------------
+
+FINETUNE_BASE_MODEL: str = (
+    cfg.get_setting("Finetune", "base_model", "openai/whisper-small")
+    or "openai/whisper-small"
+)
+FINETUNE_LANGUAGE: str = (
+    cfg.get_setting("Finetune", "language", "english") or "english"
+)
+FINETUNE_TASK: str = (
+    cfg.get_setting("Finetune", "task", "transcribe") or "transcribe"
+)
+FINETUNE_LORA_R: int = cfg.get_int_setting("Finetune", "lora_r", 8)
+FINETUNE_LORA_ALPHA: int = cfg.get_int_setting("Finetune", "lora_alpha", 32)
+FINETUNE_LORA_DROPOUT: float = cfg.get_float_setting("Finetune", "lora_dropout", 0.1)
+FINETUNE_LORA_TARGET_MODULES: list[str] = (
+    cfg.get_setting("Finetune", "lora_target_modules", "q_proj,v_proj")
+    or "q_proj,v_proj"
+).split(",")
+FINETUNE_FREEZE_ENCODER: bool = cfg.get_bool_setting("Finetune", "freeze_encoder", True)
+FINETUNE_LEARNING_RATE: float = cfg.get_float_setting("Finetune", "learning_rate", 1e-4)
+FINETUNE_WARMUP_STEPS: int = cfg.get_int_setting("Finetune", "warmup_steps", 100)
+FINETUNE_MAX_STEPS: int = cfg.get_int_setting("Finetune", "max_steps", 2000)
+FINETUNE_BATCH_SIZE: int = cfg.get_int_setting("Finetune", "batch_size", 8)
+FINETUNE_GRAD_ACCUM_STEPS: int = cfg.get_int_setting("Finetune", "grad_accum_steps", 2)
+FINETUNE_FP16: bool = cfg.get_bool_setting("Finetune", "fp16", False)
+FINETUNE_BF16: bool = cfg.get_bool_setting("Finetune", "bf16", False)
+FINETUNE_OUTPUT_DIR: Path = Path(
+    cfg.get_setting("Finetune", "output_dir", "~/listenr_finetune")
+    or "~/listenr_finetune"
+).expanduser()
+FINETUNE_EVAL_STEPS: int = cfg.get_int_setting("Finetune", "eval_steps", 200)
+FINETUNE_SAVE_STEPS: int = cfg.get_int_setting("Finetune", "save_steps", 400)
+FINETUNE_GENERATION_MAX_LENGTH: int = cfg.get_int_setting(
+    "Finetune", "generation_max_length", 128
+)
+
+# ---------------------------------------------------------------------------
 # Output / transcript files
 # ---------------------------------------------------------------------------
 
