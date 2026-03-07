@@ -158,7 +158,7 @@ class TestMergeAdapterFullMock:
         output_dir = tmp_path / "merged"
         mocks = self._run_merge(adapter_dir, output_dir)
         mocks["whisper_cls"].from_pretrained.assert_called_once_with(
-            "openai/whisper-small"
+            "openai/whisper-small", device_map="cpu"
         )
 
     def test_loads_peft_model_from_adapter_dir(self, tmp_path):

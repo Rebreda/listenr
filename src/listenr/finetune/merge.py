@@ -86,16 +86,6 @@ def merge_adapter(adapter_dir: Path, output_dir: Path, dry_run: bool = False) ->
     dry_run:
         If True, perform all validation steps but do not write any files.
     """
-    try:
-        from peft import PeftModel
-        from transformers import WhisperForConditionalGeneration, WhisperProcessor
-    except ImportError:
-        logger.error(
-            "transformers and peft are required. Install with:\n"
-            "  uv pip install -e '.[finetune]'"
-        )
-        sys.exit(1)
-
     adapter_dir = adapter_dir.expanduser().resolve()
     output_dir = output_dir.expanduser().resolve()
 
@@ -112,6 +102,16 @@ def merge_adapter(adapter_dir: Path, output_dir: Path, dry_run: bool = False) ->
     if dry_run:
         logger.info("Dry run — no files written.")
         return
+
+    try:
+        from peft import PeftModel
+        from transformers import WhisperForConditionalGeneration, WhisperProcessor
+    except ImportError:
+        logger.error(
+            "transformers and peft are required. Install with:\n"
+            "  uv pip install -e '.[finetune]'"
+        )
+        sys.exit(1)
 
     # ── load ──────────────────────────────────────────────────────────────────
     logger.info(f"Loading base model '{base_model_id}' ...")
