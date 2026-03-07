@@ -182,7 +182,7 @@ class LemonadeUnifiedASR:
                         pass
 
 
-if __name__ == '__main__':
+def main():
     import argparse
     parser = argparse.ArgumentParser(description='Lemonade Unified ASR — CLI mode')
     parser.add_argument('--llm', action='store_true', help='Enable LLM post-processing')
@@ -204,3 +204,7 @@ if __name__ == '__main__':
             print(f"\n[RESULT] Raw: {result['raw_text']}\n[RESULT] Corrected: {result['corrected_text']}")
     else:
         print("Please provide --audio path/to/audio.wav to transcribe.")
+
+
+if __name__ == '__main__':
+    main()
