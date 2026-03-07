@@ -10,7 +10,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
 import torch.nn as nn
 
 
