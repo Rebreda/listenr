@@ -57,6 +57,11 @@ RUN pip install --no-cache-dir \
 # Do NOT set HSA_OVERRIDE_GFX_VERSION here — an empty string is not the same
 # as unset and causes ROCm to fail. Set it at runtime only if your GPU needs
 # it (e.g. -e HSA_OVERRIDE_GFX_VERSION=10.3.0 for RX 6000 series).
-ENV HIP_VISIBLE_DEVICES="0"
+#
+# TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: enables Flash Efficient and
+# Memory Efficient attention on newer AMD GPUs (RDNA 3 / RDNA 4). Without
+# this, PyTorch logs a UserWarning and falls back to a slower implementation.
+ENV HIP_VISIBLE_DEVICES="0" \
+    TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL="1"
 
 CMD ["listenr-finetune", "--help"]

@@ -36,6 +36,9 @@ services:
       # Pin to one GPU to avoid imbalance warnings/segfaults on multi-GPU systems.
       # Set to "0,1" to use both GPUs if they are matched.
       HIP_VISIBLE_DEVICES: "${HIP_VISIBLE_DEVICES:-0}"
+      # Enables Flash Efficient / Memory Efficient attention on RDNA3+.
+      # Set to "" to disable (falls back to slower implementation with a warning).
+      TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: "${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-1}"
       # Only set HSA_OVERRIDE_GFX_VERSION if your GPU needs it.
       # An empty string is NOT the same as unset — it causes ROCm to fail.
       # Uncomment in .env only if needed:
