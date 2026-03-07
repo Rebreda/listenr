@@ -65,8 +65,11 @@ def prepare_example(batch: dict, processor: Any) -> dict:
     """Convert a single dataset example into model-ready tensors.
 
     Expects the dataset to have been created by ``listenr-build-dataset --format hf``
-    (or ``both``), so the ``audio_path`` column is a decoded HuggingFace
-    :class:`datasets.Audio` dict with keys ``array`` and ``sampling_rate``.
+    (or ``both``).  ``audio_path`` may be either:
+
+    * A plain file-path string — loaded on-the-fly with ``soundfile``.
+    * A decoded HuggingFace :class:`datasets.Audio` dict with keys
+      ``array`` and ``sampling_rate`` — used directly (legacy / test usage).
 
     Returns a dict with:
 
@@ -76,7 +79,17 @@ def prepare_example(batch: dict, processor: Any) -> dict:
     ``labels``
         Token ids for ``corrected_transcription``.
     """
-    audio = batch["audio_path"]  # decoded Audio dict: {"array": ndarray, "sampling_rate": int}
+    audio = batch["audio_path"]
+
+    # Handle plain path string — load with soundfile to avoid the torchcodec
+    # requirement introduced in datasets 4+.
+    if isinstance(audio, str):
+        import soundfile as sf  # already a listenr core dependency
+        array, sample_rate = sf.read(audio, dtype="float32")
+        if array.ndim > 1:          # stereo → mono
+            array = array.mean(axis=1)
+        audio = {"array": array, "sampling_rate": sample_rate}
+
     input_features = processor.feature_extractor(
         audio["array"],
         sampling_rate=audio["sampling_rate"],

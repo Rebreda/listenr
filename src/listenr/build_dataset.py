@@ -202,7 +202,7 @@ def write_csv(entries: list[dict], output_dir: Path, split: str) -> Path:
 def write_hf_dataset(entries: list[dict], output_dir: Path) -> None:
     """Write a HuggingFace DatasetDict to output_dir (requires 'datasets' package)."""
     try:
-        from datasets import Dataset, DatasetDict, Audio as HFAudio  # type: ignore
+        from datasets import Dataset, DatasetDict  # type: ignore
     except ImportError:
         logger.error(
             "The 'datasets' package is required for HuggingFace format. "
@@ -218,8 +218,10 @@ def write_hf_dataset(entries: list[dict], output_dir: Path) -> None:
     for split_name, split_entries in splits_dict.items():
         if not split_entries:
             continue
+        # Keep audio_path as a plain string so datasets never tries to decode
+        # it automatically (datasets 4+ requires torchcodec for Audio features).
+        # prepare_example loads the WAV on-the-fly with soundfile instead.
         ds = Dataset.from_list(split_entries)
-        ds = ds.cast_column("audio_path", HFAudio(sampling_rate=16000))
         hf_splits[split_name] = ds
 
     dd = DatasetDict(hf_splits)
@@ -309,11 +311,32 @@ def main() -> None:
         help="Preserve parenthesised/bracketed noise tags (e.g. (music)) in transcriptions",
     )
     parser.add_argument(
+        "--remap-audio-prefix",
+        metavar="OLD:NEW",
+        default=None,
+        help=(
+            "Rewrite the leading path component of every audio_path in the manifest. "
+            "Useful when running inside a container where the host path is mounted at "
+            "a different location. Example: "
+            "--remap-audio-prefix /home/g/.listenr/audio_clips:/data/listenr/audio_clips"
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print stats and exit without writing files",
     )
     args = parser.parse_args()
+
+    # Parse the prefix remap if provided
+    remap_old: str | None = None
+    remap_new: str | None = None
+    if args.remap_audio_prefix:
+        parts = args.remap_audio_prefix.split(":", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            logger.error("--remap-audio-prefix must be in the form OLD:NEW (two non-empty paths separated by ':')") 
+            sys.exit(1)
+        remap_old, remap_new = parts[0], parts[1]
 
     manifest_path = args.manifest or _manifest_path()
     output_dir = Path(args.output).expanduser()
@@ -326,6 +349,15 @@ def main() -> None:
 
     records = load_manifest(manifest_path)
     logger.info(f"Loaded {len(records)} records from {manifest_path}")
+
+    if remap_old is not None:
+        remapped = 0
+        for rec in records:
+            p = rec.get("audio_path", "")
+            if p.startswith(remap_old):
+                rec["audio_path"] = remap_new + p[len(remap_old):]
+                remapped += 1
+        logger.info(f"Remapped {remapped}/{len(records)} audio paths: {remap_old!r} -> {remap_new!r}")
 
     entries = []
     skipped = 0
