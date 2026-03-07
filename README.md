@@ -21,6 +21,9 @@ Listenr is a privacy-first tool for collecting real-world audio and high-quality
 4. **Correct (optional)** — a local LLM cleans the transcript and tags content categories.
 5. **Save** — each utterance is saved as a `.wav` clip and a line in `manifest.jsonl`.
 6. **Build dataset** — `listenr-build-dataset` writes train/dev/test splits from the manifest.
+7. **Fine-tune** — `listenr-finetune` trains a LoRA adapter on top of a Whisper base model using your collected data.
+8. **Merge** — `listenr-merge` folds the adapter into the base model, producing a self-contained model that needs only `transformers`.
+9. **Test** — `scripts/test_merged.py` runs the merged model against your clips and compares output to the original Whisper transcriptions.
 
 ## Quick Start
 
@@ -42,7 +45,7 @@ See [docs/setup.md](docs/setup.md) for full installation instructions.
 | [docs/configuration.md](docs/configuration.md) | Full `config.ini` reference, VAD tuning, available models |
 | [docs/recording.md](docs/recording.md) | CLI usage, how recording works, batch transcription |
 | [docs/dataset.md](docs/dataset.md) | Building train/dev/test splits, CSV and HF formats |
-| [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman |
+| [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common errors and fixes |
 
 ## License
