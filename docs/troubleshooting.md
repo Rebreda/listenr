@@ -103,6 +103,26 @@ Fedora and other distributions ship `podman` instead of `docker`. Replace
 `docker` with `podman` in all commands. They are CLI-compatible for `run` and
 `build`. For compose, use `podman compose` (requires `podman-compose` package).
 
+### `RuntimeError: volume [...] not defined in top level` with podman-compose
+
+podman-compose cannot parse nested variable defaults like
+`${VAR:-${HOME}/path}` in `volumes:`. The compose file avoids this by using
+plain `${VAR}` references, which **requires a `.env` file** to be present.
+
+If you haven't created one yet:
+
+```bash
+cp .env.example .env
+# then edit .env to replace /home/you/ with your actual home directory
+sed -i "s|/home/you/|$HOME/|g" .env
+```
+
+Verify all `LISTENR_*` variables are set:
+
+```bash
+grep LISTENR .env
+```
+
 ### Out of GPU memory (OOM)
 
 Reduce memory usage:

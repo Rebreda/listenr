@@ -30,8 +30,10 @@ finetune = [
 
 [project.scripts]
 listenr = "listenr.cli:main"
+listenr-asr = "listenr.unified_asr:main"
 listenr-build-dataset = "listenr.build_dataset:main"
 listenr-finetune = "listenr.finetune.train:main"
+listenr-merge = "listenr.finetune.merge:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

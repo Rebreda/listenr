@@ -1,7 +1,9 @@
 
-# Listenr: Local Dataset Collection for ASR Training
+# Listenr: Record, Correct, and Fine-tune Your Own Whisper Model
 
-Listenr is a privacy-first tool for collecting real-world audio and high-quality transcriptions, designed to help build better automatic speech recognition (ASR) models. All processing runs locally on your hardware via [Lemonade Server](https://lemonade-server.ai) — no audio or text leaves your machine.
+Listenr is a privacy-first, end-to-end pipeline for building a personalised Whisper model from your own voice. Record audio, have a local LLM clean up the transcriptions, fine-tune any `openai/whisper-*` model on that data, and deploy a standalone model — all running locally on your hardware via [Lemonade Server](https://lemonade-server.ai). No audio, text, or model weights ever leave your machine.
+
+> **Scope:** The recording and fine-tuning pipeline is built around Whisper (whisper.cpp for capture, `WhisperForConditionalGeneration` for training). The dataset format — `manifest.jsonl` → HuggingFace dataset — is model-agnostic and can feed any ASR trainer.
 
 ![Listenr CLI streaming — example output](screenshot.png)
 
@@ -10,8 +12,10 @@ Listenr is a privacy-first tool for collecting real-world audio and high-quality
 - **Local-only, private by design.** No cloud APIs. All inference runs on your CPU, GPU, or NPU via Lemonade Server.
 - **Open models.** Uses Whisper.cpp for transcription and any GGUF-compatible LLM for post-processing correction.
 - **Automatic correction pipeline.** A local LLM cleans up punctuation, grammar, and homophones — producing a higher-quality training corpus than raw Whisper output alone.
-- **Real-world data.** Collects natural, conversational speech in realistic environments.
-- **Dataset-ready output.** Every utterance is saved with its audio clip and appended to a single `manifest.jsonl`. One command builds train/dev/test splits.
+- **Real-world data.** Collects natural, conversational speech in realistic environments, including domain-specific vocabulary that generic models get wrong.
+- **Dataset-ready output.** Every utterance is saved with its audio clip and appended to a single `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace dataset format.
+- **Full fine-tuning pipeline.** LoRA fine-tuning of any `openai/whisper-*` model on AMD or NVIDIA GPU via a pre-built Podman container. No environment setup — just `podman compose run`.
+- **Deploy anywhere.** `listenr-merge` folds the LoRA adapter into a self-contained `WhisperForConditionalGeneration` that loads with plain `transformers`, no PEFT required.
 
 ## How It Works
 
@@ -21,6 +25,9 @@ Listenr is a privacy-first tool for collecting real-world audio and high-quality
 4. **Correct (optional)** — a local LLM cleans the transcript and tags content categories.
 5. **Save** — each utterance is saved as a `.wav` clip and a line in `manifest.jsonl`.
 6. **Build dataset** — `listenr-build-dataset` writes train/dev/test splits from the manifest.
+7. **Fine-tune** — `listenr-finetune` trains a LoRA adapter on top of a Whisper base model using your collected data.
+8. **Merge** — `listenr-merge` folds the adapter into the base model, producing a self-contained model that needs only `transformers`.
+9. **Test** — `scripts/test_merged.py` runs the merged model against your clips and compares output to the original Whisper transcriptions.
 
 ## Quick Start
 
@@ -29,7 +36,23 @@ git clone https://github.com/Rebreda/listenr
 cd listenr
 uv pip install -e .
 lemonade-server serve   # in another terminal
-uv run listenr
+uv run listenr          # start recording
+```
+
+Once you have recordings, the full pipeline runs as:
+
+```bash
+# Build train/dev/test splits from your manifest
+uv run listenr-build-dataset --format hf
+
+# Fine-tune Whisper (see docs/finetune-amd.md for AMD GPUs)
+podman compose run --rm finetune
+
+# Merge the LoRA adapter into a standalone model
+podman compose run --rm merge
+
+# Test it against your clips
+python scripts/test_merged.py --keyword YourDomainWord
 ```
 
 See [docs/setup.md](docs/setup.md) for full installation instructions.
@@ -42,7 +65,7 @@ See [docs/setup.md](docs/setup.md) for full installation instructions.
 | [docs/configuration.md](docs/configuration.md) | Full `config.ini` reference, VAD tuning, available models |
 | [docs/recording.md](docs/recording.md) | CLI usage, how recording works, batch transcription |
 | [docs/dataset.md](docs/dataset.md) | Building train/dev/test splits, CSV and HF formats |
-| [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman |
+| [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common errors and fixes |
 
 ## License

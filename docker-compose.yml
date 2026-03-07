@@ -46,11 +46,11 @@ services:
       #   HSA_OVERRIDE_GFX_VERSION=11.0.0  (RX 7000 / RDNA3)
     volumes:
       # HF dataset produced by build-dataset (DATASET_OUTPUT default: ~/listenr_dataset)
-      - "${LISTENR_DATASET:-${HOME}/listenr_dataset}:/data/dataset"
+      - "${LISTENR_DATASET}:/data/dataset:z"
       # Adapter checkpoint output (FINETUNE_OUTPUT_DIR default: ~/listenr_finetune)
-      - "${LISTENR_FINETUNE:-${HOME}/listenr_finetune}:/data/adapter"
+      - "${LISTENR_FINETUNE}:/data/adapter:z"
       # HuggingFace model cache — avoids re-downloading on every run
-      - "${HF_CACHE:-${HOME}/.cache/huggingface}:/root/.cache/huggingface"
+      - "${HF_CACHE}:/root/.cache/huggingface:z"
     working_dir: /app
     entrypoint: ["listenr-finetune"]
     command:
@@ -68,9 +68,9 @@ services:
       - seccomp=unconfined
     volumes:
       # Audio clips + manifest.jsonl (STORAGE_BASE default: ~/.listenr/audio_clips)
-      - "${LISTENR_DATA:-${HOME}/.listenr}:/data/listenr"
+      - "${LISTENR_DATA}:/data/listenr:z"
       # Dataset output (DATASET_OUTPUT default: ~/listenr_dataset)
-      - "${LISTENR_DATASET:-${HOME}/listenr_dataset}:/data/dataset"
+      - "${LISTENR_DATASET}:/data/dataset:z"
     working_dir: /app
     entrypoint: ["listenr-build-dataset"]
     command:
@@ -79,4 +79,31 @@ services:
       - "--format=hf"
       # Rewrites host absolute paths in manifest.jsonl to container paths.
       # OLD is the host prefix stored in manifest entries; NEW is where it's mounted here.
-      - "--remap-audio-prefix=${HOME}/.listenr/audio_clips:/data/listenr/audio_clips"
+      - "--remap-audio-prefix=${LISTENR_DATA}/audio_clips:/data/listenr/audio_clips"
+
+  # ── merge LoRA adapter into base model → standalone merged model ──────────
+  merge:
+    build: .
+    image: listenr-rocm
+    # Merge is pure CPU matrix math — no GPU needed, and loading ROCm
+    # device drivers causes a segfault during PeftModel.merge_and_unload().
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      # Force CPU-only execution — keeps ROCm HSA runtime fully uninitialised
+      HIP_VISIBLE_DEVICES: "-1"
+      CUDA_VISIBLE_DEVICES: "-1"
+    volumes:
+      # LoRA adapter produced by finetune (input)
+      - "${LISTENR_FINETUNE}:/data/adapter:z"
+      # Destination for the merged model (output)
+      - "${LISTENR_MERGED}:/data/merged:z"
+      # HuggingFace model cache — avoids re-downloading base model
+      - "${HF_CACHE}:/root/.cache/huggingface:z"
+    working_dir: /app
+    entrypoint: ["listenr-merge"]
+    command:
+      - "--adapter=/data/adapter"
+      - "--output=/data/merged"

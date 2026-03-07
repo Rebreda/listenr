@@ -1,7 +1,7 @@
 # Fine-tuning on AMD GPU (ROCm)
 
 This guide covers running `listenr-finetune` inside the official AMD ROCm
-PyTorch container using Podman. The fine-tuning code works on the host too if
+PyTorch container using Docker/Podman. The fine-tuning code works on the host too if
 you already have ROCm PyTorch installed — the container is just the easiest way
 to get a working GPU environment.
 
@@ -14,7 +14,7 @@ to get a working GPU environment.
 ## Prerequisites
 
 - AMD GPU with ROCm driver installed on the host
-- Podman installed (`podman --version`)
+- Docker or Podman installed (`podman --version`)
 - At least ~50 GB free disk space (model cache + audio data + checkpoints)
 - Recordings collected on the host via `listenr` (see [recording.md](recording.md))
 
@@ -183,15 +183,122 @@ Or set it in your `.env` file (it's read automatically by `podman compose`).
 
 ---
 
-## Loading the adapter
+## 6. Merge the adapter into a standalone model
 
-The fine-tuned LoRA adapter is saved to `~/listenr_finetune`. Load it with:
+The fine-tuned LoRA adapter stores only weight *deltas*, not the full model.
+To produce a standalone `WhisperForConditionalGeneration` that can be loaded
+**without PEFT installed**, run `listenr-merge`.
+
+> **Note:** Merging is pure matrix arithmetic — no GPU required. The merge
+> service (and host command) runs entirely on CPU.
+
+### In the container (recommended)
+
+```bash
+podman run --rm \
+  --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+  -v ~/listenr_finetune:/data/adapter \
+  -v ~/listenr_merged:/data/merged \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -w /app listenr-rocm \
+  listenr-merge --adapter /data/adapter --output /data/merged
+```
+
+> No GPU passthrough flags needed — merging runs on CPU.
+
+### With podman compose
+
+```bash
+podman compose run --rm merge
+```
+
+### On the host
+
+```bash
+listenr-merge --adapter ~/listenr_finetune --output ~/listenr_merged
+```
+
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--adapter PATH` | `~/listenr_finetune` | LoRA adapter directory (output of `listenr-finetune`) |
+| `--output PATH` | `~/listenr_finetune_merged` | Destination for the merged model |
+| `--dry-run` | off | Validate inputs and print plan without writing files |
+
+### What it writes
+
+`~/listenr_merged/` will contain a fully self-contained Whisper model:
+
+```
+model.safetensors        ← merged weights (size depends on base model)
+config.json
+tokenizer.json
+tokenizer_config.json
+generation_config.json
+processor_config.json
+```
+
+### Using the merged model
 
 ```python
-from peft import PeftModel
-from transformers import WhisperForConditionalGeneration
+from transformers import WhisperForConditionalGeneration, WhisperProcessor, pipeline
 
-base = WhisperForConditionalGeneration.from_pretrained("openai/whisper-small")
-model = PeftModel.from_pretrained(base, "~/listenr_finetune")
-model = model.merge_and_unload()  # optional: merge for inference
+model = WhisperForConditionalGeneration.from_pretrained("~/listenr_merged")
+processor = WhisperProcessor.from_pretrained("~/listenr_merged")
+
+# or, using the pipeline API
+asr = pipeline("automatic-speech-recognition", model="~/listenr_merged")
+result = asr("recording.wav")
+print(result["text"])
 ```
+
+The merged model requires only `transformers` — no `peft` needed at inference time.
+
+---
+
+## 7. Test inference
+
+`scripts/test_merged.py` loads the merged model and runs it against clips from
+your `manifest.jsonl`, showing a side-by-side comparison of the original
+Whisper output and the fine-tuned model's output.
+
+```bash
+# Run against the 20 most recent clips (default)
+python scripts/test_merged.py
+
+# Test clips where a specific word appears in the corrected ground truth.
+# Checks whether the fine-tuned model now produces that word.
+python scripts/test_merged.py --keyword Claude --keyword Cursor --n 50
+
+# Skip clips shorter than 1 second (reduces noise from clipped recordings)
+python scripts/test_merged.py --min-duration 1.0
+
+# Transcribe a single file
+python scripts/test_merged.py --audio path/to/clip.wav
+```
+
+### Keyword recall summary
+
+When `--keyword` is used, the script prints a recall summary after all clips:
+
+```
+  Keyword recall
+    Claude                4/5  (80%)  ████░
+    Cursor                3/3  (100%) ███
+```
+
+Each row shows how many clips where the word appeared in the ground truth
+(`corrected_transcription`) were also produced correctly by the fine-tuned
+model. A miss means the model still mangled that word for that clip.
+
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--model PATH` | `~/listenr_merged` | Merged model directory |
+| `--manifest PATH` | `~/.listenr/audio_clips/manifest.jsonl` | Manifest file |
+| `--audio PATH` | — | Transcribe a single file instead of manifest clips |
+| `--n N` | `20` | Number of clips to test |
+| `--min-duration S` | `0.5` | Skip clips shorter than this (seconds) |
+| `--keyword WORD` | — | Filter to clips with WORD in ground truth; repeatable |
