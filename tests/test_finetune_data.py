@@ -124,6 +124,7 @@ class TestWhisperDataCollator:
 
     @pytest.fixture()
     def collator(self):
+        pytest.importorskip("torch")
         processor = _make_processor(pad_token_id=50256)
         return WhisperDataCollator(processor=processor, decoder_start_token_id=50258)
 
