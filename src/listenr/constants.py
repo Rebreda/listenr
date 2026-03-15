@@ -73,6 +73,7 @@ STORAGE_MAX_GB: float = cfg.get_float_setting("Storage", "max_storage_gb", 10.0)
 VAD_THRESHOLD: float = cfg.get_float_setting("VAD", "threshold", 0.05)
 VAD_SILENCE_MS: int = cfg.get_int_setting("VAD", "silence_duration_ms", 800)
 VAD_PREFIX_PADDING_MS: int = cfg.get_int_setting("VAD", "prefix_padding_ms", 250)
+VAD_MAX_SEGMENT_S: float = cfg.get_float_setting("VAD", "max_segment_s", 12.0)
 
 # ---------------------------------------------------------------------------
 # LLM

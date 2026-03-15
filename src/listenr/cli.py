@@ -27,7 +27,9 @@ from scipy.signal import resample_poly
 from listenr.unified_asr import LemonadeUnifiedASR
 from listenr.llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
 from listenr.transcript_utils import is_hallucination, strip_noise_tags
-from listenr.storage import save_recording
+from listenr.storage import save_recording, patch_manifest_record
+from listenr.llm_processor import lemonade_transcribe_audio
+from listenr.transcript_utils import clean_transcript
 from listenr.constants import (
     ASR_RATE,
     CAPTURE_RATE,
@@ -38,6 +40,9 @@ from listenr.constants import (
     LLM_ENABLED as USE_LLM,
     LLM_MODEL,
     STORAGE_BASE,
+    VAD_MAX_SEGMENT_S,
+    VAD_SILENCE_MS,
+    VAD_THRESHOLD,
     WHISPER_MODEL,
 )
 
@@ -134,7 +139,7 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
             yield pcm16
 
 
-async def _run(save: bool, show_raw: bool, debug: bool):
+async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = False):
     ensure_models_loaded(debug=debug)
     ws_url = get_lemonade_ws_url()
     ws_url_with_model = f"{ws_url}?model={WHISPER_MODEL}"
@@ -143,7 +148,9 @@ async def _run(save: bool, show_raw: bool, debug: bool):
     print(f"   WS URL : {ws_url_with_model}")
     print(f"   LLM    : {'enabled (' + LLM_MODEL + ')' if USE_LLM else 'disabled'}")
     print(f"   Save   : {'yes -> ' + str(STORAGE_BASE) if save else 'no'}")
+    print(f"   VAD    : silence={VAD_SILENCE_MS}ms  threshold={VAD_THRESHOLD}  max_segment={VAD_MAX_SEGMENT_S}s")
     print(f"   Debug  : {'on' if debug else 'off  (use --debug to enable)'}")
+    print(f"   Batch  : {'on (batch retranscribe after save)' if retranscribe else 'off'}")
     print("   Press Ctrl+C to stop.\n")
 
     if debug:
@@ -162,6 +169,7 @@ async def _run(save: bool, show_raw: bool, debug: bool):
         mic_stream(pcm_buffer, debug=debug),
         lemonade_ws_url=ws_url_with_model,
         debug=debug,
+        max_segment_s=VAD_MAX_SEGMENT_S,
     ):
         msg_type = result.get('type', '')
 
@@ -239,6 +247,40 @@ async def _run(save: bool, show_raw: bool, debug: bool):
                         categories=categories,
                     )
                     print(f"  [SAVED] {record['audio_path']} ({record['duration_s']}s)")
+                    if retranscribe:
+                        try:
+                            batch_raw = lemonade_transcribe_audio(
+                                record['audio_path'], model=WHISPER_MODEL
+                            )
+                            action, batch_cleaned = clean_transcript(batch_raw)
+                            if action != 'drop' and batch_cleaned != raw_text:
+                                patch_fields: dict = {
+                                    'raw_transcription': batch_cleaned,
+                                    'corrected_transcription': batch_cleaned,
+                                    'whisper_model': WHISPER_MODEL,
+                                    'is_improved': False,
+                                    'llm_model': None,
+                                }
+                                if USE_LLM:
+                                    llm_batch = lemonade_llm_correct(
+                                        batch_cleaned,
+                                        model=LLM_MODEL,
+                                        recent_context=list(llm_context),
+                                    )
+                                    if 'error' not in llm_batch:
+                                        patch_fields['corrected_transcription'] = llm_batch.get('corrected', batch_cleaned)
+                                        patch_fields['is_improved'] = bool(llm_batch.get('is_improved', False))
+                                        patch_fields['llm_model'] = llm_batch.get('model') if patch_fields['is_improved'] else None
+                                patch_manifest_record(
+                                    STORAGE_BASE / 'manifest.jsonl',
+                                    record['uuid'],
+                                    patch_fields,
+                                )
+                                if show_raw:
+                                    print(f"  [BATCH] {batch_cleaned}")
+                        except Exception as exc:
+                            if debug:
+                                print(f"  [DEBUG] batch retranscribe failed: {exc}")
                     pcm_buffer.clear()
                 else:
                     print(f"  WARNING: pcm_buffer is empty -- no audio captured for this segment", flush=True)
@@ -256,11 +298,13 @@ def main():
     parser = argparse.ArgumentParser(description='Listenr CLI — real-time ASR via Lemonade')
     parser.add_argument('--no-save', action='store_true', help='Do not save recordings to disk')
     parser.add_argument('--show-raw', action='store_true', help='Show raw Whisper transcription')
+    parser.add_argument('--retranscribe', action='store_true',
+                        help='After saving each clip, re-transcribe with batch endpoint for higher accuracy')
     parser.add_argument('--debug', action='store_true', help='Verbose debug output (WS messages, mic RMS, etc.)')
     args = parser.parse_args()
 
     try:
-        asyncio.run(_run(save=not args.no_save, show_raw=args.show_raw, debug=args.debug))
+        asyncio.run(_run(save=not args.no_save, show_raw=args.show_raw, debug=args.debug, retranscribe=args.retranscribe))
     except KeyboardInterrupt:
         print("\nUnloading models from Lemonade...", flush=True)
         result = lemonade_unload_models()

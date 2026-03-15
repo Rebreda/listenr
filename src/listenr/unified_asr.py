@@ -26,6 +26,7 @@ from listenr.constants import (
     VAD_THRESHOLD,
     VAD_SILENCE_MS,
     VAD_PREFIX_PADDING_MS,
+    VAD_MAX_SEGMENT_S,
     WHISPER_MODEL as _DEFAULT_WHISPER_MODEL,
 )
 
@@ -54,7 +55,7 @@ class LemonadeUnifiedASR:
             self.logger.error(f"Transcription or LLM correction failed: {e}")
             return {"error": str(e)}
 
-    async def stream_transcribe(self, audio_stream, whisper_model=None, on_result=None, lemonade_ws_url=None, debug=False):
+    async def stream_transcribe(self, audio_stream, whisper_model=None, on_result=None, lemonade_ws_url=None, debug=False, max_segment_s=None):
         """
         Stream audio to Lemonade's /realtime WebSocket endpoint and yield transcriptions.
 
@@ -62,6 +63,10 @@ class LemonadeUnifiedASR:
         on_result: optional callback for each result dict
         lemonade_ws_url: full WebSocket URL including ?model= param (overrides config)
         debug: if True, all server messages are yielded (not just transcriptions/errors)
+        max_segment_s: client-side hard cap on speech segment length in seconds.
+            When a segment exceeds this duration, input_audio_buffer.commit is sent
+            to force transcription before Whisper's 30s context limit is reached.
+            Defaults to VAD_MAX_SEGMENT_S from config (0 = disabled).
 
         Lemonade /realtime protocol:
           Client → Server:
@@ -79,6 +84,9 @@ class LemonadeUnifiedASR:
 
         if whisper_model is None:
             whisper_model = _DEFAULT_WHISPER_MODEL
+        if max_segment_s is None:
+            max_segment_s = VAD_MAX_SEGMENT_S
+        _max_segment_s = float(max_segment_s) if max_segment_s else 0.0
         if lemonade_ws_url is None:
             try:
                 resp = requests.get(f"{LLM_API_BASE}/health", timeout=5)
@@ -106,6 +114,9 @@ class LemonadeUnifiedASR:
             await ws.send(json.dumps(session_update))
 
             result_queue: asyncio.Queue = asyncio.Queue()
+            # Shared state: time.monotonic() when speech_started was last received.
+            # Reset to None after a forced commit or when speech ends.
+            _speech_state: dict = {'started_at': None}
 
             async def _send_audio():
                 chunks = 0
@@ -116,6 +127,18 @@ class LemonadeUnifiedASR:
                         "audio": b64_audio,
                     }))
                     chunks += 1
+                    # Client-side max segment guard: if speech has been running longer
+                    # than _max_segment_s, force a commit so Whisper never sees >20s.
+                    if (
+                        _max_segment_s > 0
+                        and _speech_state['started_at'] is not None
+                        and asyncio.get_event_loop().time() - _speech_state['started_at'] >= _max_segment_s
+                    ):
+                        if debug:
+                            elapsed = asyncio.get_event_loop().time() - _speech_state['started_at']
+                            print(f"  [DEBUG] max_segment_s ({_max_segment_s}s) reached after {elapsed:.1f}s — forcing commit", flush=True)
+                        await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                        _speech_state['started_at'] = None
                 if debug:
                     print(f"  [DEBUG] Audio stream ended after {chunks} chunks, sending commit")
                 await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
@@ -139,6 +162,12 @@ class LemonadeUnifiedASR:
                 async for raw in ws:
                     msg = json.loads(raw)
                     msg_type = msg.get('type', '')
+                    if msg_type == 'input_audio_buffer.speech_started':
+                        _speech_state['started_at'] = asyncio.get_event_loop().time()
+                    elif msg_type in ('input_audio_buffer.speech_stopped',
+                                      'input_audio_buffer.committed'):
+                        # Server acknowledged end of segment — reset timer
+                        _speech_state['started_at'] = None
                     if msg_type in _ALWAYS_FORWARD:
                         await result_queue.put(msg)
                     elif debug and msg_type in _DEBUG_FORWARD:

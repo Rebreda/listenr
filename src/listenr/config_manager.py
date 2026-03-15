@@ -38,12 +38,19 @@ DEFAULT_CONFIG = {
     'VAD': {
         # Server-side VAD settings sent via session.update on the /realtime WebSocket.
         # All VAD processing happens in Lemonade; these are passed through as-is.
-        # threshold: RMS energy threshold for speech detection (raise to ignore background noise)
+        # threshold: RMS energy threshold for speech detection.
+        #   Raise (e.g. 0.08-0.15) to ignore background noise and prevent runaway segments;
+        #   lower values are more sensitive but pick up more ambient sound.
         'threshold': '0.05',
-        # silence_duration_ms: ms of silence to trigger speech end and transcription
+        # silence_duration_ms: ms of silence required to end a speech segment.
+        #   800ms is a good default; raise to 1200ms for slower/more deliberate speech.
         'silence_duration_ms': '800',
         # prefix_padding_ms: minimum speech duration (ms) before triggering transcription
         'prefix_padding_ms': '250',
+        # max_segment_s: client-side hard cap on segment length (seconds).
+        #   Whisper hallucinates badly above ~20s; this forces a commit before that.
+        #   Set to 0 to disable. Default 12s keeps segments well within the 30s Whisper limit.
+        'max_segment_s': '12',
     },
     'LLM': {
         'enabled': 'true',  # Enable LLM post-processing of transcriptions

@@ -34,6 +34,7 @@ listenr-asr = "listenr.unified_asr:main"
 listenr-build-dataset = "listenr.build_dataset:main"
 listenr-finetune = "listenr.finetune.train:main"
 listenr-merge = "listenr.finetune.merge:main"
+listenr-retranscribe = "listenr.retranscribe:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

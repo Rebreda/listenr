@@ -87,3 +87,35 @@ def save_recording(
         f.write(json.dumps(record, ensure_ascii=False) + '\n')
 
     return record
+
+
+def patch_manifest_record(manifest_path: Path, uid: str, fields: dict) -> bool:
+    """Update specific fields on an existing manifest record identified by *uid*.
+
+    Rewrites the manifest atomically.  Returns True if the record was found and
+    updated, False if no record with that UUID exists.
+    """
+    lines = manifest_path.read_text(encoding='utf-8').splitlines(keepends=True)
+    found = False
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            new_lines.append(line)
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            new_lines.append(line)
+            continue
+        if record.get('uuid') == uid:
+            record.update(fields)
+            new_lines.append(json.dumps(record, ensure_ascii=False) + '\n')
+            found = True
+        else:
+            new_lines.append(line)
+    if found:
+        tmp = manifest_path.with_suffix('.jsonl.tmp')
+        tmp.write_text(''.join(new_lines), encoding='utf-8')
+        tmp.replace(manifest_path)
+    return found
