@@ -95,6 +95,68 @@ def _should_process(
     return True
 
 
+def retranscribe_clip(
+    audio_path: str,
+    *,
+    model: str,
+    use_llm: bool = False,
+    llm_model: str | None = None,
+    llm_context: list | None = None,
+) -> dict | None:
+    """Re-transcribe a single audio file via the Lemonade batch endpoint.
+
+    Parameters
+    ----------
+    audio_path:
+        Path to the WAV file to transcribe.
+    model:
+        Whisper model name to pass to Lemonade.
+    use_llm:
+        If True, also run LLM correction on the new raw transcript.
+    llm_model:
+        LLM model name forwarded to ``lemonade_llm_correct`` (optional).
+    llm_context:
+        Recent-context list forwarded to ``lemonade_llm_correct`` (optional).
+
+    Returns
+    -------
+    A dict of manifest fields to write, or ``None`` if the result is a
+    hallucination (the caller should leave the record untouched).
+    Raises on network/IO errors so callers can handle them.
+    """
+    new_raw = lemonade_transcribe_audio(audio_path, model=model)
+    action, cleaned_raw = clean_transcript(new_raw)
+    if action == "drop":
+        return None
+
+    patch: dict = {
+        "raw_transcription": cleaned_raw,
+        "corrected_transcription": cleaned_raw,
+        "whisper_model": model,
+        "is_improved": False,
+        "llm_model": None,
+    }
+
+    if use_llm:
+        llm_kwargs: dict = {}
+        if llm_model is not None:
+            llm_kwargs["model"] = llm_model
+        if llm_context is not None:
+            llm_kwargs["recent_context"] = llm_context
+        try:
+            llm_result = lemonade_llm_correct(cleaned_raw, **llm_kwargs)
+            if "error" not in llm_result:
+                patch["corrected_transcription"] = llm_result.get("corrected", cleaned_raw)
+                patch["is_improved"] = bool(llm_result.get("is_improved", False))
+                patch["llm_model"] = llm_result.get("model") if patch["is_improved"] else None
+            else:
+                logger.warning("LLM error: %s", llm_result["error"])
+        except Exception as exc:
+            logger.warning("LLM call failed: %s", exc)
+
+    return patch
+
+
 def retranscribe(
     manifest_path: Path,
     *,
@@ -152,40 +214,24 @@ def retranscribe(
         logger.info("[%s] transcribing %s …", uuid, Path(audio_path).name)
 
         try:
-            new_raw = lemonade_transcribe_audio(audio_path, model=effective_model)
+            patch = retranscribe_clip(
+                audio_path, model=effective_model, use_llm=use_llm
+            )
         except Exception as exc:
             logger.error("[%s] transcription failed: %s", uuid, exc)
             errors += 1
             continue
 
-        # Clean the new transcript the same way the live pipeline does.
-        action, cleaned_raw = clean_transcript(new_raw)
-        if action == "drop":
+        if patch is None:
             logger.info("[%s] result is a hallucination — keeping original", uuid)
             skipped += 1
             processed -= 1
             continue
 
         old_raw = record.get("raw_transcription", "")
-        changed = cleaned_raw != old_raw
-
-        new_corrected = cleaned_raw
-        llm_model_used = None
-        is_improved = False
-
-        if use_llm:
-            try:
-                llm_result = lemonade_llm_correct(cleaned_raw)
-                if "error" not in llm_result:
-                    new_corrected = llm_result.get("corrected_text", cleaned_raw)
-                    is_improved = bool(llm_result.get("is_improved", False))
-                    llm_model_used = llm_result.get("model") if is_improved else None
-                    if new_corrected != record.get("corrected_transcription", ""):
-                        changed = True
-                else:
-                    logger.warning("[%s] LLM error: %s", uuid, llm_result["error"])
-            except Exception as exc:
-                logger.warning("[%s] LLM call failed: %s", uuid, exc)
+        changed = patch["raw_transcription"] != old_raw
+        if use_llm and patch["corrected_transcription"] != record.get("corrected_transcription", ""):
+            changed = True
 
         if changed:
             updated += 1
@@ -194,17 +240,10 @@ def retranscribe(
                     "[%s] (dry-run) raw: %r → %r",
                     uuid,
                     old_raw,
-                    cleaned_raw,
+                    patch["raw_transcription"],
                 )
             else:
-                record["raw_transcription"] = cleaned_raw
-                record["corrected_transcription"] = (
-                    new_corrected if new_corrected else cleaned_raw
-                )
-                record["whisper_model"] = effective_model
-                if use_llm:
-                    record["is_improved"] = is_improved
-                    record["llm_model"] = llm_model_used
+                record.update(patch)
         else:
             logger.info("[%s] no change", uuid)
 

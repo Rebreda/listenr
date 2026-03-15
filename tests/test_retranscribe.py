@@ -294,7 +294,7 @@ class TestRetranscribeLive:
 class TestRetranscribeWithLLM:
     def _llm_result(self, corrected: str, improved: bool = True) -> dict:
         return {
-            "corrected_text": corrected,
+            "corrected": corrected,
             "is_improved": improved,
             "model": "mock-llm",
             "categories": [],

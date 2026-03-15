@@ -28,8 +28,7 @@ from listenr.unified_asr import LemonadeUnifiedASR
 from listenr.llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
 from listenr.transcript_utils import is_hallucination, strip_noise_tags
 from listenr.storage import save_recording, patch_manifest_record
-from listenr.llm_processor import lemonade_transcribe_audio
-from listenr.transcript_utils import clean_transcript
+from listenr.retranscribe import retranscribe_clip
 from listenr.constants import (
     ASR_RATE,
     CAPTURE_RATE,
@@ -249,35 +248,21 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                     print(f"  [SAVED] {record['audio_path']} ({record['duration_s']}s)")
                     if retranscribe:
                         try:
-                            batch_raw = lemonade_transcribe_audio(
-                                record['audio_path'], model=WHISPER_MODEL
+                            patch_fields = retranscribe_clip(
+                                record['audio_path'],
+                                model=WHISPER_MODEL,
+                                use_llm=USE_LLM,
+                                llm_model=LLM_MODEL,
+                                llm_context=list(llm_context),
                             )
-                            action, batch_cleaned = clean_transcript(batch_raw)
-                            if action != 'drop' and batch_cleaned != raw_text:
-                                patch_fields: dict = {
-                                    'raw_transcription': batch_cleaned,
-                                    'corrected_transcription': batch_cleaned,
-                                    'whisper_model': WHISPER_MODEL,
-                                    'is_improved': False,
-                                    'llm_model': None,
-                                }
-                                if USE_LLM:
-                                    llm_batch = lemonade_llm_correct(
-                                        batch_cleaned,
-                                        model=LLM_MODEL,
-                                        recent_context=list(llm_context),
-                                    )
-                                    if 'error' not in llm_batch:
-                                        patch_fields['corrected_transcription'] = llm_batch.get('corrected', batch_cleaned)
-                                        patch_fields['is_improved'] = bool(llm_batch.get('is_improved', False))
-                                        patch_fields['llm_model'] = llm_batch.get('model') if patch_fields['is_improved'] else None
+                            if patch_fields is not None and patch_fields['raw_transcription'] != raw_text:
                                 patch_manifest_record(
                                     STORAGE_BASE / 'manifest.jsonl',
                                     record['uuid'],
                                     patch_fields,
                                 )
                                 if show_raw:
-                                    print(f"  [BATCH] {batch_cleaned}")
+                                    print(f"  [BATCH] {patch_fields['raw_transcription']}")
                         except Exception as exc:
                             if debug:
                                 print(f"  [DEBUG] batch retranscribe failed: {exc}")
