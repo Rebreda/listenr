@@ -1,16 +1,14 @@
 
-# Listenr: Record, Correct, and Fine-tune Your Own Whisper Model
+# Listenr: Record, Correct, and Fine-tune Your Own Whisper Models
 
-Listenr is a privacy-first, end-to-end pipeline for building a personalised Whisper model from your own voice. Record audio, have a local LLM clean up the transcriptions, fine-tune any `openai/whisper-*` model on that data, and deploy a standalone model — all running locally on your hardware via [Lemonade Server](https://lemonade-server.ai). No audio, text, or model weights ever leave your machine.
-
-> **Scope:** The recording and fine-tuning pipeline is built around Whisper (whisper.cpp for capture, `WhisperForConditionalGeneration` for training). The dataset format — `manifest.jsonl` → HuggingFace dataset — is model-agnostic and can feed any ASR trainer.
+Listenr is a privacy-first, end-to-end pipeline for building a personalised Whisper model from your own voice. Record audio, have a local LLM clean up the transcriptions, fine-tune any `openai/whisper-*` model on that data, and deploy a standalone model. No audio, text, or model weights ever leave your machine.
 
 ![Listenr CLI streaming — example output](screenshot.png)
 
 ## Why Listenr?
 
 - **Local-only, private by design.** No cloud APIs. All inference runs on your CPU, GPU, or NPU via Lemonade Server.
-- **Open models.** Uses Whisper.cpp for transcription and any GGUF-compatible LLM for post-processing correction.
+- **Open models.** Uses [lemonade-server.ai](lemonade-server.ai) for transcription and inference-based post-processing corrections
 - **Automatic correction pipeline.** A local LLM cleans up punctuation, grammar, and homophones — producing a higher-quality training corpus than raw Whisper output alone.
 - **Real-world data.** Collects natural, conversational speech in realistic environments, including domain-specific vocabulary that generic models get wrong.
 - **Dataset-ready output.** Every utterance is saved with its audio clip and appended to a single `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace dataset format.
@@ -67,6 +65,7 @@ See [docs/setup.md](docs/setup.md) for full installation instructions.
 | [docs/dataset.md](docs/dataset.md) | Building train/dev/test splits, CSV and HF formats |
 | [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common errors and fixes |
+| [Blog post walk through](https://quickthoughts.ca/posts/listenr-asr-training-data-problem/) | Series surrounding how Listenr works |
 
 ## License
 
