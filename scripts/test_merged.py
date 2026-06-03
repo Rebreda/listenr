@@ -20,7 +20,7 @@ Usage:
     # Override the base model used for comparison (default: read from merged config)
     uv run python scripts/test_merged.py --audio clip.wav --base-model openai/whisper-small
 
-Requires: transformers, soundfile, torch
+Requires: transformers and torch (audio decoding handled by pipeline via ffmpeg or soundfile)
     uv pip install -e ".[finetune]"
 """
 

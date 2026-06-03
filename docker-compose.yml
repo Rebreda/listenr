@@ -49,6 +49,12 @@ services:
       # container UID can write to them (matters with `userns_mode: keep-id`).
       MIOPEN_USER_DB_PATH: "/tmp/miopen"
       MIOPEN_CUSTOM_CACHE_DIR: "/tmp/miopen"
+      # With userns_mode: keep-id, $HOME still points to /root inside the container,
+      # but the process runs as the host UID which doesn't own /root. listenr resolves
+      # config/cache paths via os.path.expanduser('~'), so it would fail to find the
+      # bind-mounted config at /home/ubuntu. Set HOME explicitly so expanduser('~')
+      # resolves to the ubuntu user's home where the bind mounts are.
+      HOME: "/home/ubuntu"
       # HSA_OVERRIDE_GFX_VERSION: set in .env only if your GPU needs it.
       # An empty string is NOT the same as unset — it causes ROCm to fail.
       #   RX 6000 / RDNA2 → 10.3.0       RX 7000 / RDNA3 → 11.0.0
