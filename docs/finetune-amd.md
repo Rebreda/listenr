@@ -50,10 +50,7 @@ podman run -it \
     --security-opt seccomp=unconfined \
     --ipc=host \
     --device=/dev/kfd \
-    --device=/dev/dri/card0 \
-    --device=/dev/dri/card1 \
-    --device=/dev/dri/renderD128 \
-    --device=/dev/dri/renderD129 \
+    --device=/dev/dri \
     --group-add keep-groups \
     -v ~/.listenr:/data/listenr \
     -v ~/listenr_dataset:/data/dataset \
@@ -87,7 +84,13 @@ replace it with a CPU-only build from PyPI.
 
 ### Recommended: `podman compose`
 
-After copying `.env.example` to `.env` and editing paths:
+One-time setup:
+
+```bash
+scripts/setup-env.sh        # writes .env with $HOME-relative defaults
+```
+
+Then:
 
 ```bash
 podman compose run --rm finetune                       # defaults: bf16, 2000 steps
@@ -121,8 +124,7 @@ podman run --rm -it \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     --device=/dev/kfd \
-    --device=/dev/dri/card1 \
-    --device=/dev/dri/renderD128 \
+    --device=/dev/dri \
     --group-add keep-groups \
     --ipc=host \
     -e HIP_VISIBLE_DEVICES=0 \
@@ -142,12 +144,11 @@ The adapter checkpoint is written to `~/listenr_finetune` on the host via
 the bind mount. (No need to pass MIOpen env vars — the image bakes them
 in via `ENV` in the Dockerfile.)
 
-> **How this differs from AMD's stock guidance.** AMD's docs recommend
-> `--device=/dev/dri` (the whole directory) and `--group-add video`. We
-> pin to specific `card*`/`renderD*` nodes (lets you select a GPU on
-> multi-card hosts) and use `--group-add keep-groups` because the Ubuntu
-> base image's `render`/`video` GIDs don't match Fedora/RHEL hosts — see
-> the note below the GPU-selection section.
+> **How this differs from AMD's stock guidance.** We match AMD's
+> recommended `--device=/dev/dri` (whole directory) but use
+> `--group-add keep-groups` instead of `--group-add video` because the
+> Ubuntu base image's `render`/`video` GIDs don't match Fedora/RHEL hosts
+> — see the note below the GPU-selection section.
 
 > **Why `--userns=keep-id`?** Without it, files written by the container
 > end up owned by a subuid (`/etc/subuid`) and look root-ish on the host.
@@ -172,7 +173,9 @@ podman compose run --rm finetune         # LoRA fine-tune Whisper
 podman compose run --rm merge            # merge adapter into standalone model
 ```
 
-All paths are configured via `.env` (copy from `.env.example`).
+Paths and GPU settings come from `.env` — generate it with
+`scripts/setup-env.sh` (uses your `$HOME`) or copy `.env.example` and
+edit by hand.
 
 ---
 
