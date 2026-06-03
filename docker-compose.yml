@@ -39,6 +39,10 @@ services:
       # Enables Flash Efficient / Memory Efficient attention on RDNA3+.
       # Set to "" to disable (falls back to slower implementation with a warning).
       TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: "${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-1}"
+      # Relocate MIOpen's lockfile DB and JIT kernel cache out of $HOME so the
+      # container UID can write to them (matters with `userns_mode: keep-id`).
+      MIOPEN_USER_DB_PATH: "/tmp/miopen"
+      MIOPEN_CUSTOM_CACHE_DIR: "/tmp/miopen"
       # Only set HSA_OVERRIDE_GFX_VERSION if your GPU needs it.
       # An empty string is NOT the same as unset — it causes ROCm to fail.
       # Uncomment in .env only if needed:
