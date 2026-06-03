@@ -5,7 +5,7 @@
 
 # Listenr
 
-**Build a better speech-to-text model for your domain, running entirely on your machine.**
+**Build better speech-to-text and ASR models entirely on your machine.**
 
 Record your voice. Clean it up with local AI. Fine-tune a Whisper model. Deploy something that's actually yours.
 
@@ -14,8 +14,6 @@ Record your voice. Clean it up with local AI. Fine-tune a Whisper model. Deploy 
 <a href="docs/configuration.md">Configuration</a> &nbsp;|&nbsp;
 <a href="docs/recording.md">Recording</a> &nbsp;|&nbsp;
 <a href="docs/troubleshooting.md">Troubleshooting</a>
-
-<br>
 
 <a href="https://lemonade-server.ai" target="_blank" rel="noopener">
   <img
@@ -36,31 +34,22 @@ Record your voice. Clean it up with local AI. Fine-tune a Whisper model. Deploy 
 
 1. **Create good data** - Use Listenr to record and collect natural speech with domain-specific vocabulary that generic models miss.
 2. **Process & improve** - Pipe it through [Lemonade](https://lemonade-server.ai) or any OpenAI-compatible provider to transcribe with Whisper and automatically correct grammar, punctuation, and homophones using a local LLM.
-3. **Fine-tune & deploy** - Use Listenr to build train/dev/test splits and fine-tune a Whisper model with LoRA. Merge the adapter into a self-contained model you control.
+3. **Fine-tune & deploy** - Use Listenr to build train/dev/test splits and fine-tune a Whisper model with LoRA. Merge the adapter into a self-contained model you can deploy.
 
 Everything stays local - no audio, text, or weights ever leave on your machine.
 
-## Under the hood
-
-**Recording & transcription** - Listenr streams your microphone to Lemonade's `/realtime` WebSocket in ~85 ms chunks (16 kHz). Lemonade's voice activity detection segments speech, runs Whisper.cpp, and streams back transcripts.
-
-**Auto-correction** - A local LLM cleans up punctuation, grammar, and homophones, producing a higher-quality training corpus than raw Whisper output alone.
-
-**Dataset & fine-tuning** - Listenr saves each utterance as a `.wav` clip and a line in `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace format. Another command fine-tunes any `openai/whisper-*` model using LoRA (works on AMD and NVIDIA GPUs via Podman).
-
-**Deployment** - `listenr-merge` folds the LoRA adapter into a self-contained model that loads with plain `transformers`. No PEFT dependency. Run inference locally or deploy it anywhere.
-
 ## Get started
 
-**Install Lemonade and pull models (Ubuntu):**
+**Install Lemonade and pull models:**
+
+Lemonade guide: [lemonade-server.ai/docs/guide/install](https://lemonade-server.ai/docs/guide/install/)
+
 ```bash
-sudo add-apt-repository ppa:lemonade-team/stable
-sudo apt install lemonade-server
+# after installing locally, download default models
 lemonade pull Whisper-Base
 lemonade pull gpt-oss-20b-mxfp4-GGUF
 ```
 
-> Snap: `sudo snap install lemonade-server`. Other platforms: [lemonade-server.ai/docs/guide/install](https://lemonade-server.ai/docs/guide/install/)
 
 **Install Listenr and start recording:**
 ```bash
@@ -86,6 +75,16 @@ python scripts/test_merged.py --keyword YourDomainWord
 ```
 
 See [docs/setup.md](docs/setup.md) for full installation details.
+
+## Under the hood
+
+**Recording & transcription** - Listenr streams your microphone to Lemonade's `/realtime` WebSocket in ~85 ms chunks (16 kHz). Lemonade's voice activity detection segments speech, runs Whisper.cpp, and streams back transcripts.
+
+**Auto-correction** - A local LLM cleans up punctuation, grammar, and homophones, producing a higher-quality training corpus than raw Whisper output alone.
+
+**Dataset & fine-tuning** - Listenr saves each utterance as a `.wav` clip and a line in `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace format. Another command fine-tunes any `openai/whisper-*` model using LoRA (works on AMD and NVIDIA GPUs via Podman).
+
+**Deployment** - `listenr-merge` folds the LoRA adapter into a self-contained model that loads with plain `transformers`. No PEFT dependency. Run inference locally or deploy it anywhere.
 
 ## Documentation
 
