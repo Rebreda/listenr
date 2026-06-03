@@ -14,8 +14,11 @@ Usage:
     # Limit to 10 clips, skip very short ones
     uv run python scripts/test_merged.py --n 10 --min-duration 1.0
 
-    # Point at a single audio file instead of the manifest
+    # Point at a single audio file — prints base vs fine-tuned side-by-side
     uv run python scripts/test_merged.py --audio path/to/clip.wav
+
+    # Override the base model used for comparison (default: read from merged config)
+    uv run python scripts/test_merged.py --audio clip.wav --base-model openai/whisper-small
 
 Requires: transformers, soundfile, torch
     uv pip install -e ".[finetune]"
@@ -226,6 +229,48 @@ def print_result(
     return hit_map
 
 
+def _resolve_base_model(merged_path: Path, override: str | None) -> str:
+    """Determine which base model to compare against."""
+    if override:
+        return override
+    cfg = merged_path / "config.json"
+    if cfg.exists():
+        try:
+            data = json.loads(cfg.read_text())
+            name = data.get("_name_or_path") or data.get("base_model_name_or_path")
+            if name and "listenr_merged" not in str(name):
+                return name
+        except (OSError, json.JSONDecodeError):
+            pass
+    return "openai/whisper-small"
+
+
+def compare_audio(audio_path: Path, merged_path: Path, base_override: str | None, device: str) -> None:
+    """Print base-model vs merged-model transcriptions of a single audio file."""
+    try:
+        from transformers import pipeline
+    except ImportError:
+        print("ERROR: transformers required. uv pip install -e '.[finetune]'", file=sys.stderr)
+        sys.exit(1)
+
+    base_id = _resolve_base_model(merged_path, base_override)
+    dev_idx = 0 if device == "cuda" else -1
+
+    print(f"  loading base ({base_id}) ...", file=sys.stderr, flush=True)
+    base_asr = pipeline("automatic-speech-recognition", model=base_id, device=dev_idx)
+    base_text = base_asr(str(audio_path))["text"].strip()
+
+    print(f"  loading merged ({merged_path}) ...", file=sys.stderr, flush=True)
+    merged_asr = pipeline("automatic-speech-recognition", model=str(merged_path), device=dev_idx)
+    merged_text = merged_asr(str(audio_path))["text"].strip()
+
+    w = 40
+    print()
+    print(f"  {'ORIGINAL (base)':<{w}}  {'FINE-TUNED (merged)':<{w}}")
+    print(f"  {'─' * (w - 2):<{w}}  {'─' * (w - 2):<{w}}")
+    print(f"  {_col(base_text, w):<{w}}  {_col(merged_text, w):<{w}}")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -250,6 +295,10 @@ def main():
                              "(ground truth). Shows raw Whisper vs fine-tuned output and "
                              "whether the new model now produces the keyword. "
                              "Repeat: --keyword Claude --keyword Cursor")
+    parser.add_argument("--base-model", type=str, default=None,
+                        help="Base model ID for --audio side-by-side comparison "
+                             "(default: read from merged model's config, fall back to "
+                             "openai/whisper-small)")
     args = parser.parse_args()
 
     if not args.model.exists():
@@ -257,17 +306,18 @@ def main():
               "Run 'podman compose run --rm merge' first.", file=sys.stderr)
         sys.exit(1)
 
-    model, processor, device = load_model(args.model)
-
     # ── single file mode ──────────────────────────────────────────────────────
     if args.audio:
         if not args.audio.exists():
             print(f"ERROR: audio file not found: {args.audio}", file=sys.stderr)
             sys.exit(1)
-        print(f"\nTranscribing {args.audio} ...")
-        text = transcribe(args.audio, model, processor, device)
-        print(f"\n  {text}")
+        import torch
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"\nTranscribing {args.audio} ({device}) ...\n")
+        compare_audio(args.audio, args.model, args.base_model, device)
         return
+
+    model, processor, device = load_model(args.model)
 
     # ── manifest mode ─────────────────────────────────────────────────────────
     keywords = args.keywords or []
