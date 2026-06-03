@@ -56,9 +56,9 @@ _NEED_RESAMPLE = (CAPTURE_RATE != ASR_RATE)
 
 
 def get_lemonade_ws_url() -> str:
-    """Discover Lemonade WebSocket URL from /api/v1/health."""
+    """Discover Lemonade WebSocket URL from /v1/health."""
     from listenr.constants import LLM_API_BASE
-    health_url = LLM_API_BASE.rstrip('/').replace('/api/v1', '') + '/api/v1/health'
+    health_url = LLM_API_BASE.rstrip('/').replace('/api/v1', '') + '/v1/health'
     try:
         resp = requests.get(health_url, timeout=2)
         resp.raise_for_status()

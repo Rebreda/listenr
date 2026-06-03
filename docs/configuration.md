@@ -9,7 +9,7 @@ Edit it directly — changes take effect on the next `listenr` invocation.
 
 ```ini
 [Lemonade]
-api_base = http://localhost:8000/api/v1
+api_base = http://localhost:13305/api/v1
 
 [Whisper]
 model = Whisper-Tiny
@@ -29,7 +29,7 @@ prefix_padding_ms = 250
 [LLM]
 enabled = true
 model = gpt-oss-20b-mxfp4-GGUF
-api_base = http://localhost:8000/api/v1
+api_base = http://localhost:13305/api/v1
 temperature = 0.3
 max_tokens = 1500
 timeout = 30
@@ -105,7 +105,7 @@ audio stream. Adjust these two settings in `[VAD]`:
 List all models currently loaded on your Lemonade instance:
 
 ```bash
-curl -s http://localhost:8000/api/v1/models | \
+curl -s http://localhost:13305/api/v1/models | \
   python3 -c "import sys,json; [print(m['id']) for m in json.load(sys.stdin)['data']]"
 ```
 

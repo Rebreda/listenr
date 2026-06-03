@@ -11,8 +11,9 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config.ini")
 DEFAULT_CONFIG = {
     'Lemonade': {
         # HTTP API base for Lemonade Server (LLM, ASR batch, health)
-        # The /realtime WebSocket port is discovered dynamically via GET /api/v1/health -> websocket_port
-        'api_base': 'http://localhost:8000/api/v1',
+        # Lemonade-specific endpoints (/v1/load, /v1/health etc.) are derived from this automatically.
+        # The /realtime WebSocket port is discovered dynamically via GET /v1/health -> websocket_port
+        'api_base': 'http://localhost:13305/api/v1',
     },
     'Whisper': {
         # Whisper model name served by Lemonade (whisper.cpp backend).
@@ -55,7 +56,7 @@ DEFAULT_CONFIG = {
     'LLM': {
         'enabled': 'true',  # Enable LLM post-processing of transcriptions
         'model': 'gpt-oss-20b-mxfp4-GGUF',  # LLM model name (must be loaded in Lemonade)
-        'api_base': 'http://localhost:8000/api/v1',  # Lemonade Server API base
+        'api_base': 'http://localhost:13305/api/v1',  # Lemonade Server API base (OpenAI-compat)
         'temperature': '0.3',
         'max_tokens': '1500',
         'timeout': '30',

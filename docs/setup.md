@@ -5,7 +5,7 @@
 | Requirement | Notes |
 |---|---|
 | Python 3.13+ | via `uv`, `pyenv`, or system package manager |
-| [Lemonade Server](https://lemonade-server.ai) | runs locally on `localhost:8000` |
+| [Lemonade Server](https://lemonade-server.ai) | runs locally on `localhost:13305` |
 | Microphone | accessible via PipeWire or ALSA (Linux) |
 | `uv` | recommended Python package manager |
 
@@ -48,22 +48,39 @@ listenr
 
 ---
 
-## Start Lemonade Server
+## Install and start Lemonade Server
 
-Listenr talks to Lemonade over HTTP/WebSocket — it must be running before you start `listenr`.
+Listenr talks to Lemonade over HTTP/WebSocket on `localhost:13305`. It must be running before you start `listenr`.
 
+**Ubuntu (recommended):**
 ```bash
-lemonade-server serve
+sudo add-apt-repository ppa:lemonade-team/stable
+sudo apt install lemonade-server
 ```
 
-On first run, Lemonade will download the configured models. Listenr calls
-`POST /api/v1/load` automatically on startup.
+**Snap:**
+```bash
+sudo snap install lemonade-server
+```
 
-Check it is reachable:
+> For other platforms (Windows, macOS, Fedora, Arch, Docker) see the [Lemonade install guide](https://lemonade-server.ai/docs/guide/install/).
+
+The package installs a system service that starts automatically. Pull the models Listenr needs before recording:
 
 ```bash
-curl http://localhost:8000/api/v1/health
+lemonade pull Whisper-Base
+lemonade pull gpt-oss-20b-mxfp4-GGUF
 ```
+
+> First-time pulls download weights from Hugging Face. Allow a few minutes depending on connection speed. You can swap models in `~/.config/listenr/config.ini` — see [configuration.md](configuration.md) for options.
+
+Verify the server is reachable:
+
+```bash
+git diff main > my-changes.patchcurl http://localhost:13305/v1/health
+```
+
+Listenr calls `POST /v1/load` automatically on startup to ensure models are in memory before recording begins.
 
 ---
 

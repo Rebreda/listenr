@@ -23,8 +23,8 @@ import listenr.config_manager as cfg
 # ---------------------------------------------------------------------------
 
 LEMONADE_API_BASE: str = (
-    cfg.get_setting("Lemonade", "api_base", "http://localhost:8000/api/v1")
-    or "http://localhost:8000/api/v1"
+    cfg.get_setting("Lemonade", "api_base", "http://localhost:13305/api/v1")
+    or "http://localhost:13305/api/v1"
 )
 
 # ---------------------------------------------------------------------------
@@ -85,8 +85,8 @@ LLM_MODEL: str = (
     or "gpt-oss-20b-mxfp4-GGUF"
 )
 LLM_API_BASE: str = (
-    cfg.get_setting("LLM", "api_base", "http://localhost:8000/api/v1")
-    or "http://localhost:8000/api/v1"
+    cfg.get_setting("LLM", "api_base", "http://localhost:13305/api/v1")
+    or "http://localhost:13305/api/v1"
 )
 LLM_TEMPERATURE: float = cfg.get_float_setting("LLM", "temperature", 0.3)
 LLM_MAX_TOKENS: int = cfg.get_int_setting("LLM", "max_tokens", 1500)

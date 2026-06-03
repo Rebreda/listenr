@@ -118,20 +118,27 @@ def _parse_llm_correction(raw_response: str, original_text: str) -> dict:
 
 
 def _api_base() -> str:
-    """Return the Lemonade HTTP API base URL from config (with fallback)."""
+    """Return the OpenAI-compatible API base URL (e.g. /api/v1 for chat/completions)."""
     return cfg.get_setting('LLM', 'api_base', _DEFAULT_API_BASE) or _DEFAULT_API_BASE
+
+
+def _lemon_base() -> str:
+    """Return the Lemonade-specific API base URL (/v1/ for load, unload, health)."""
+    from urllib.parse import urlparse
+    parsed = urlparse(_api_base())
+    return f"{parsed.scheme}://{parsed.netloc}/v1"
 
 
 def lemonade_load_model(model_name: str, timeout: int = 120, **kwargs) -> dict:
     """
-    Call POST /api/v1/load to ensure a model is loaded before use.
+    Call POST /v1/load to ensure a model is loaded before use.
     Installs the model if not already present.
     kwargs are passed through as extra load options (e.g. whispercpp_backend, ctx_size).
     Returns the response dict, raises on HTTP error.
     """
     payload = {"model_name": model_name, **kwargs}
     resp = requests.post(
-        f"{_api_base()}/load",
+        f"{_lemon_base()}/load",
         json=payload,
         timeout=timeout,
     )
@@ -141,14 +148,14 @@ def lemonade_load_model(model_name: str, timeout: int = 120, **kwargs) -> dict:
 
 def lemonade_unload_models(model_name: str | None = None, timeout: int = 30) -> dict:
     """
-    Call POST /api/v1/unload to free model memory.
+    Call POST /v1/unload to free model memory.
     If model_name is None, unloads all loaded models.
     Returns the response dict, or an error dict on failure (never raises).
     """
     payload = {"model_name": model_name} if model_name else {}
     try:
         resp = requests.post(
-            f"{_api_base()}/unload",
+            f"{_lemon_base()}/unload",
             json=payload,
             timeout=timeout,
         )

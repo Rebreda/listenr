@@ -89,7 +89,9 @@ class LemonadeUnifiedASR:
         _max_segment_s = float(max_segment_s) if max_segment_s else 0.0
         if lemonade_ws_url is None:
             try:
-                resp = requests.get(f"{LLM_API_BASE}/health", timeout=5)
+                # /v1/health is the Lemonade-specific endpoint (not /api/v1/health)
+                _health_url = LLM_API_BASE.split('/api/')[0] + '/v1/health'
+                resp = requests.get(_health_url, timeout=5)
                 ws_port = resp.json().get('websocket_port', 8001)
             except Exception:
                 ws_port = 8001

@@ -6,7 +6,7 @@
 
 ### No transcriptions appear / `[SAVE SKIPPED] pcm_buffer is empty`
 
-- Check Lemonade is running: `curl http://localhost:8000/api/v1/health`
+- Check Lemonade is running: `curl http://localhost:13305/v1/health`
 - Run with `--debug` to see mic RMS values and WebSocket messages
 - If RMS stays near `0.000`, your `input_device` setting is wrong — list
   devices and update config (see [setup.md](setup.md))
@@ -15,13 +15,13 @@
 ### LLM correction not working / model answers the prompt instead of fixing it
 
 - Confirm `LLM.enabled = true` and the model name matches one loaded in Lemonade
-- Check `curl http://localhost:8000/api/v1/models` to see loaded models
+- Check `curl http://localhost:13305/api/v1/models` to see loaded models
 - LLM errors are non-fatal — the raw transcript is saved regardless
 
 ### `Could not discover Lemonade websocket port`
 
-Lemonade is not running or not reachable on `localhost:8000`.
-Run `lemonade-server serve` and wait for it to finish starting.
+Lemonade is not running or not reachable on `localhost:13305`.
+Install it (`sudo apt install lemonade-server`) and verify with `curl http://localhost:13305/v1/health`.
 
 ### Too many / too few segments
 
