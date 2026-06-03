@@ -85,21 +85,51 @@ replace it with a CPU-only build from PyPI.
 
 ## 4. Run fine-tuning
 
+### Recommended: `podman compose`
+
+After copying `.env.example` to `.env` and editing paths:
+
 ```bash
-podman run -it \
+podman compose run --rm finetune                       # defaults: bf16, 2000 steps
+podman compose run --rm finetune --max-steps 500       # appends to defaults
+podman compose run --rm finetune --lora-r 16 --max-steps 500
+```
+
+Extra args **append** to the entrypoint's defaults (dataset path, output
+path, `--bf16`). The `finetune` service runs the container as your host
+UID (`userns_mode: keep-id`) so adapter checkpoints in `~/listenr_finetune`
+are owned by you, and mounts your dataset, config, and HF cache.
+
+> **Compose gotcha:** `podman compose run SERVICE EXTRA_ARGS` *replaces*
+> the `command:` list but leaves `entrypoint:` alone. This repo puts all
+> required defaults (`--dataset`, `--output`, `--bf16`) in `entrypoint:`
+> precisely so extra CLI args don't wipe them out. If you fork the compose
+> file, keep that pattern or extras-with-defaults won't work.
+
+See [§5](#5-podman-compose-services) for the other services
+(`build-dataset`, `merge`).
+
+### Manual `podman run` (no compose)
+
+This is what compose expands to. The trailing `listenr-finetune` line
+**must include `--dataset`, `--output`, and `--bf16`** — they are not
+defaults in the CLI.
+
+```bash
+podman run --rm -it \
+    --userns=keep-id \
     --cap-add=SYS_PTRACE \
     --security-opt seccomp=unconfined \
     --device=/dev/kfd \
-    --device=/dev/dri/card0 \
     --device=/dev/dri/card1 \
     --device=/dev/dri/renderD128 \
-    --device=/dev/dri/renderD129 \
     --group-add keep-groups \
     --ipc=host \
     -e HIP_VISIBLE_DEVICES=0 \
     -v ~/listenr_dataset:/data/dataset \
     -v ~/listenr_finetune:/data/adapter \
-    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v ~/.config/listenr:/home/ubuntu/.config/listenr \
+    -v ~/.cache/huggingface:/home/ubuntu/.cache/huggingface \
     -w /app \
     listenr-rocm \
     listenr-finetune \
@@ -109,24 +139,40 @@ podman run -it \
 ```
 
 The adapter checkpoint is written to `~/listenr_finetune` on the host via
-the bind mount.
+the bind mount. (No need to pass MIOpen env vars — the image bakes them
+in via `ENV` in the Dockerfile.)
+
+> **How this differs from AMD's stock guidance.** AMD's docs recommend
+> `--device=/dev/dri` (the whole directory) and `--group-add video`. We
+> pin to specific `card*`/`renderD*` nodes (lets you select a GPU on
+> multi-card hosts) and use `--group-add keep-groups` because the Ubuntu
+> base image's `render`/`video` GIDs don't match Fedora/RHEL hosts — see
+> the note below the GPU-selection section.
+
+> **Why `--userns=keep-id`?** Without it, files written by the container
+> end up owned by a subuid (`/etc/subuid`) and look root-ish on the host.
+> With it, the container process runs as your host UID and outputs are
+> owned by you. The image sets `MIOPEN_USER_DB_PATH` and
+> `MIOPEN_CUSTOM_CACHE_DIR` to `/tmp/miopen` so MIOpen's lockfile/JIT
+> cache works under this UID mapping — without those env vars, the first
+> `conv1d` call crashes with `miopenStatusUnknownError`. The cache lives
+> in the ephemeral container `/tmp`, so JIT kernels recompile on each
+> `--rm` run (~30–60 s warm-up). To persist, add a named volume mounted
+> at `/tmp/miopen`.
 
 ---
 
-## 5. Using podman compose
+## 5. podman compose services
 
-Copy `.env.example` to `.env` and edit for your system, then:
+Three services are defined in `docker-compose.yml`:
 
 ```bash
-# Build dataset
-podman compose run --rm build-dataset
-
-# Fine-tune
-podman compose run --rm finetune
-
-# Pass extra args
-podman compose run --rm finetune --max-steps 500 --lora-r 16
+podman compose run --rm build-dataset    # build HF dataset from manifest.jsonl
+podman compose run --rm finetune         # LoRA fine-tune Whisper
+podman compose run --rm merge            # merge adapter into standalone model
 ```
+
+All paths are configured via `.env` (copy from `.env.example`).
 
 ---
 

@@ -15,6 +15,9 @@ services:
   finetune:
     build: .
     image: listenr-rocm
+    # Run as the host UID so adapter checkpoints written to the bind mount are
+    # owned by you, not a subuid (which looks root-ish on the host).
+    userns_mode: "keep-id"
     # Required for ROCm GPU access and stability
     cap_add:
       - SYS_PTRACE
@@ -23,10 +26,12 @@ services:
     ipc: host
     devices:
       - /dev/kfd
-      - /dev/dri/card0
+      # Uncomment the entries that match your system. Check with `ls /dev/dri/`.
+      # Most single-GPU systems have just one card / renderD pair.
+      # - /dev/dri/card0
       - /dev/dri/card1
       - /dev/dri/renderD128
-      - /dev/dri/renderD129
+      # - /dev/dri/renderD129
     # keep-groups passes the host user's actual supplementary GIDs (render, video)
     # into the container, bypassing the GID name→number mismatch between the
     # Ubuntu-based image (render=991, video=44) and the host (render=105, video=39).
@@ -51,16 +56,31 @@ services:
     volumes:
       # HF dataset produced by build-dataset (DATASET_OUTPUT default: ~/listenr_dataset)
       - "${LISTENR_DATASET}:/data/dataset:z"
+      # Audio source: the dataset's Arrow files store absolute host paths to
+      # the .wav clips. Mount LISTENR_DATA at the SAME path inside the
+      # container so those paths resolve. (Avoid by rebuilding the dataset
+      # with `build-dataset --remap-audio-prefix`.)
+      - "${LISTENR_DATA}:${LISTENR_DATA}:z,ro"
       # Adapter checkpoint output (FINETUNE_OUTPUT_DIR default: ~/listenr_finetune)
       - "${LISTENR_FINETUNE}:/data/adapter:z"
-      # HuggingFace model cache — avoids re-downloading on every run
-      - "${HF_CACHE}:/root/.cache/huggingface:z"
+      # Listenr config (default: ~/.config/listenr) — read by listenr-finetune
+      - "${LISTENR_CONFIG}:/home/ubuntu/.config/listenr:z"
+      # HuggingFace model cache — avoids re-downloading on every run.
+      # Mounted under /home/ubuntu (not /root) because userns_mode=keep-id
+      # makes the container process run as the host UID == image's ubuntu user.
+      - "${HF_CACHE}:/home/ubuntu/.cache/huggingface:z"
     working_dir: /app
-    entrypoint: ["listenr-finetune"]
-    command:
+    # NOTE: defaults live in `entrypoint`, not `command`, because
+    # `podman compose run SERVICE EXTRA_ARGS` REPLACES `command` but leaves
+    # `entrypoint` intact. With defaults in entrypoint, users can append
+    # extra flags (e.g. `run --rm finetune --max-steps 500`) without losing
+    # the dataset/output/bf16 settings.
+    entrypoint:
+      - "listenr-finetune"
       - "--dataset=/data/dataset/hf_dataset"
       - "--output=/data/adapter"
       - "--bf16"
+    command: []
 
   # ── build train/dev/test splits from manifest.jsonl ───────────────────────
   build-dataset:
@@ -76,14 +96,17 @@ services:
       # Dataset output (DATASET_OUTPUT default: ~/listenr_dataset)
       - "${LISTENR_DATASET}:/data/dataset:z"
     working_dir: /app
-    entrypoint: ["listenr-build-dataset"]
-    command:
+    # Defaults in entrypoint so `run SERVICE EXTRA_ARGS` can append flags
+    # without wiping out the manifest/output paths. See note on finetune service.
+    entrypoint:
+      - "listenr-build-dataset"
       - "--manifest=/data/listenr/audio_clips/manifest.jsonl"
       - "--output=/data/dataset"
       - "--format=hf"
       # Rewrites host absolute paths in manifest.jsonl to container paths.
       # OLD is the host prefix stored in manifest entries; NEW is where it's mounted here.
       - "--remap-audio-prefix=${LISTENR_DATA}/audio_clips:/data/listenr/audio_clips"
+    command: []
 
   # ── merge LoRA adapter into base model → standalone merged model ──────────
   merge:
@@ -107,7 +130,9 @@ services:
       # HuggingFace model cache — avoids re-downloading base model
       - "${HF_CACHE}:/root/.cache/huggingface:z"
     working_dir: /app
-    entrypoint: ["listenr-merge"]
-    command:
+    # Defaults in entrypoint so `run SERVICE EXTRA_ARGS` can append flags.
+    entrypoint:
+      - "listenr-merge"
       - "--adapter=/data/adapter"
       - "--output=/data/merged"
+    command: []
