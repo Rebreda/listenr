@@ -14,10 +14,13 @@ Usage:
     # Limit to 10 clips, skip very short ones
     uv run python scripts/test_merged.py --n 10 --min-duration 1.0
 
-    # Point at a single audio file instead of the manifest
+    # Point at a single audio file — prints base vs fine-tuned side-by-side
     uv run python scripts/test_merged.py --audio path/to/clip.wav
 
-Requires: transformers, soundfile, torch
+    # Override the base model used for comparison (default: read from merged config)
+    uv run python scripts/test_merged.py --audio clip.wav --base-model openai/whisper-small
+
+Requires: transformers and torch (audio decoding handled by pipeline via ffmpeg or soundfile)
     uv pip install -e ".[finetune]"
 """
 
@@ -57,47 +60,28 @@ DEFAULT_MIN_DUR  = 0.5   # seconds — skip sub-500ms clips (often noise)
 # Helpers
 # ---------------------------------------------------------------------------
 
-def load_model(model_path: Path):
-    """Load the merged WhisperForConditionalGeneration and processor."""
+def make_asr(model_id_or_path: str | Path):
+    """Load a Whisper ASR pipeline pinned to GPU if available."""
     try:
         import torch
-        from transformers import WhisperForConditionalGeneration, WhisperProcessor
+        from transformers import pipeline
     except ImportError:
         print("ERROR: transformers and torch required.\n"
               "  uv pip install -e '.[finetune]'", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Loading model from {model_path} ...")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = WhisperForConditionalGeneration.from_pretrained(str(model_path))
-    model = model.to(device)
-    model.eval()
-    processor = WhisperProcessor.from_pretrained(str(model_path))
-    print(f"  device : {device}")
-    print(f"  params : {sum(p.numel() for p in model.parameters()):,}")
-    return model, processor, device
+    device = 0 if torch.cuda.is_available() else -1
+    print(f"Loading {model_id_or_path} ({'cuda' if device == 0 else 'cpu'}) ...", file=sys.stderr)
+    return pipeline(
+        "automatic-speech-recognition",
+        model=str(model_id_or_path),
+        device=device,
+    )
 
 
-def transcribe(audio_path: Path, model, processor, device: str) -> str:
-    """Return the model's transcription of a single WAV file."""
-    import torch
-    import soundfile as sf
-
-    audio, sr = sf.read(str(audio_path), dtype="float32")
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)   # stereo → mono
-
-    inputs = processor(audio, sampling_rate=sr, return_tensors="pt")
-    input_features = inputs.input_features.to(device)
-
-    with torch.no_grad():
-        predicted_ids = model.generate(
-            input_features,
-            language="english",
-            task="transcribe",
-        )
-
-    return processor.batch_decode(predicted_ids, skip_special_tokens=True)[0].strip()
+# English transcription regardless of audio language — matches the fine-tune
+# task. Pass to `asr(path, generate_kwargs=...)` per call.
+GENERATE_KWARGS = {"language": "english", "task": "transcribe"}
 
 
 def load_manifest_entries(
@@ -226,6 +210,39 @@ def print_result(
     return hit_map
 
 
+def _resolve_base_model(merged_path: Path, override: str | None) -> str:
+    """Determine which base model to compare against."""
+    if override:
+        return override
+    cfg = merged_path / "config.json"
+    if cfg.exists():
+        try:
+            data = json.loads(cfg.read_text())
+            name = data.get("_name_or_path") or data.get("base_model_name_or_path")
+            if name and "listenr_merged" not in str(name):
+                return name
+        except (OSError, json.JSONDecodeError):
+            pass
+    return "openai/whisper-small"
+
+
+def compare_audio(audio_path: Path, merged_path: Path, base_override: str | None) -> None:
+    """Print base-model vs merged-model transcriptions of a single audio file."""
+    base_id = _resolve_base_model(merged_path, base_override)
+
+    base_asr = make_asr(base_id)
+    base_text = base_asr(str(audio_path), generate_kwargs=GENERATE_KWARGS)["text"].strip()
+
+    merged_asr = make_asr(merged_path)
+    merged_text = merged_asr(str(audio_path), generate_kwargs=GENERATE_KWARGS)["text"].strip()
+
+    w = 40
+    print()
+    print(f"  {'ORIGINAL (base)':<{w}}  {'FINE-TUNED (merged)':<{w}}")
+    print(f"  {'─' * (w - 2):<{w}}  {'─' * (w - 2):<{w}}")
+    print(f"  {_col(base_text, w):<{w}}  {_col(merged_text, w):<{w}}")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -250,6 +267,10 @@ def main():
                              "(ground truth). Shows raw Whisper vs fine-tuned output and "
                              "whether the new model now produces the keyword. "
                              "Repeat: --keyword Claude --keyword Cursor")
+    parser.add_argument("--base-model", type=str, default=None,
+                        help="Base model ID for --audio side-by-side comparison "
+                             "(default: read from merged model's config, fall back to "
+                             "openai/whisper-small)")
     args = parser.parse_args()
 
     if not args.model.exists():
@@ -257,17 +278,16 @@ def main():
               "Run 'podman compose run --rm merge' first.", file=sys.stderr)
         sys.exit(1)
 
-    model, processor, device = load_model(args.model)
-
     # ── single file mode ──────────────────────────────────────────────────────
     if args.audio:
         if not args.audio.exists():
             print(f"ERROR: audio file not found: {args.audio}", file=sys.stderr)
             sys.exit(1)
-        print(f"\nTranscribing {args.audio} ...")
-        text = transcribe(args.audio, model, processor, device)
-        print(f"\n  {text}")
+        print(f"\nTranscribing {args.audio} ...\n")
+        compare_audio(args.audio, args.model, args.base_model)
         return
+
+    asr = make_asr(args.model)
 
     # ── manifest mode ─────────────────────────────────────────────────────────
     keywords = args.keywords or []
@@ -295,7 +315,7 @@ def main():
     for i, rec in enumerate(entries, 1):
         audio_path = Path(rec["audio_path"])
         print(f"  [{i}/{total}] {audio_path.name} ...", end="", flush=True)
-        merged_text = transcribe(audio_path, model, processor, device)
+        merged_text = asr(str(audio_path), generate_kwargs=GENERATE_KWARGS)["text"].strip()
         print(f"\r", end="")
         hit_map = print_result(i, rec, merged_text, audio_path, keywords or None)
         for kw, hit in hit_map.items():

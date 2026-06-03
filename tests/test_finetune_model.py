@@ -32,13 +32,16 @@ class TestMakeLoraConfig:
         # PEFT stores target_modules as a set in newer versions.
         assert set(cfg.target_modules) == {"q_proj"}
 
-    def test_task_type_is_seq2seq(self):
-        peft = pytest.importorskip("peft")
-        from peft import TaskType
+    def test_task_type_is_unset(self):
+        pytest.importorskip("peft")
         from listenr.finetune.model import make_lora_config
 
+        # task_type must NOT be SEQ_2_SEQ_LM for Whisper: that wraps the model in
+        # PeftModelForSeq2SeqLM (built for text-to-text models) and injects a
+        # stray input_ids=None that collides with the Whisper decoder's input_ids,
+        # raising "got multiple values for keyword argument 'input_ids'".
         cfg = make_lora_config(r=8, alpha=32, dropout=0.1, target_modules=["v_proj"])
-        assert cfg.task_type == TaskType.SEQ_2_SEQ_LM
+        assert cfg.task_type is None
 
     def test_inference_mode_is_false(self):
         pytest.importorskip("peft")

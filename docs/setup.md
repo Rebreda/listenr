@@ -27,7 +27,7 @@ Only needed if you plan to run `listenr-finetune`. Requires PyTorch.
 uv pip install -e ".[finetune]"
 ```
 
-> For AMD GPU fine-tuning, use the ROCm container instead — see [finetune-amd.md](finetune-amd.md).
+> For AMD GPU fine-tuning, use the ROCm container instead  - see [finetune-amd.md](finetune-amd.md).
 
 ---
 
@@ -72,12 +72,12 @@ lemonade pull Whisper-Base
 lemonade pull gpt-oss-20b-mxfp4-GGUF
 ```
 
-> First-time pulls download weights from Hugging Face. Allow a few minutes depending on connection speed. You can swap models in `~/.config/listenr/config.ini` — see [configuration.md](configuration.md) for options.
+> First-time pulls download weights from Hugging Face. Allow a few minutes depending on connection speed. You can swap models in `~/.config/listenr/config.ini`  - see [configuration.md](configuration.md) for options.
 
 Verify the server is reachable:
 
 ```bash
-git diff main > my-changes.patchcurl http://localhost:13305/v1/health
+curl http://localhost:13305/v1/health
 ```
 
 Listenr calls `POST /v1/load` automatically on startup to ensure models are in memory before recording begins.

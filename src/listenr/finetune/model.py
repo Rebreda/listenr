@@ -74,7 +74,7 @@ def make_lora_config(
         ``q_proj`` and ``v_proj`` is the minimal effective set.
     """
     try:
-        from peft import LoraConfig, TaskType
+        from peft import LoraConfig
     except ImportError:
         print(
             "ERROR: peft is required. Install with:\n"
@@ -83,8 +83,9 @@ def make_lora_config(
         )
         sys.exit(1)
 
+    # No task_type: SEQ_2_SEQ_LM is for text-to-text models and injects a stray
+    # input_ids=None that collides with Whisper's decoder input_ids.
     return LoraConfig(
-        task_type=TaskType.SEQ_2_SEQ_LM,
         inference_mode=False,
         r=r,
         lora_alpha=alpha,

@@ -61,7 +61,15 @@ RUN pip install --no-cache-dir \
 # TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: enables Flash Efficient and
 # Memory Efficient attention on newer AMD GPUs (RDNA 3 / RDNA 4). Without
 # this, PyTorch logs a UserWarning and falls back to a slower implementation.
+# MIOPEN_*: relocate MIOpen's lockfile DB and JIT kernel cache out of $HOME.
+# With `--userns=keep-id` the container process runs as the host UID, which
+# does not own /home/ubuntu inside the image, so MIOpen can't create its
+# default ~/.config/miopen and ~/.cache/miopen dirs — first conv1d call
+# crashes with `miopenStatusUnknownError`. /tmp is world-writable.
+# Bind-mount these paths if you want the JIT cache to persist across runs.
 ENV HIP_VISIBLE_DEVICES="0" \
-    TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL="1"
+    TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL="1" \
+    MIOPEN_USER_DB_PATH="/tmp/miopen" \
+    MIOPEN_CUSTOM_CACHE_DIR="/tmp/miopen"
 
 CMD ["listenr-finetune", "--help"]
