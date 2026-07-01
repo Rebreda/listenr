@@ -2,7 +2,13 @@
 
 import numpy as np
 
-from listenr.categorize import _load_topics, _text, filter_records, score_records
+from listenr.categorize import (
+    _load_topics,
+    _text,
+    cached_encoder,
+    filter_records,
+    score_records,
+)
 
 
 def fake_encode(texts):
@@ -39,25 +45,62 @@ class TestScoreAndFilter:
 
     def test_scores_pick_best_topic(self):
         scored = score_records(self._records(), ["technology", "AI"], fake_encode)
-        by_uuid = {rec["uuid"]: (score, topic) for score, topic, rec in scored}
-        assert by_uuid["1"][0] == 1.0  # tech text vs tech topic -> cosine 1
-        assert by_uuid["2"][0] == 0.0  # non-tech
-        assert by_uuid["3"][0] == 1.0
+        by_uuid = {r["uuid"]: r["topic_score"] for r in scored}
+        assert by_uuid["1"] == 1.0  # tech text vs tech topic -> cosine 1
+        assert by_uuid["2"] == 0.0  # non-tech
+        assert by_uuid["3"] == 1.0
 
-    def test_filter_keeps_only_matches_and_annotates(self):
+    def test_score_records_annotates_copies(self):
+        records = self._records()
+        scored = score_records(records, ["technology"], fake_encode)
+        assert all("topic_score" in r and "category" in r for r in scored)
+        assert "topic_score" not in records[0]  # originals untouched
+
+    def test_filter_keeps_only_matches_and_flags(self):
         scored = score_records(self._records(), ["technology"], fake_encode)
         kept = filter_records(scored, threshold=0.5)
         assert [r["uuid"] for r in kept] == ["1", "3"]
         assert all(r["topic_matched"] and r["category"] == "technology" for r in kept)
-        assert all("topic_score" in r for r in kept)
 
-    def test_keep_all_annotates_without_dropping(self):
+    def test_keep_all_flags_non_matches(self):
         scored = score_records(self._records(), ["technology"], fake_encode)
         kept = filter_records(scored, threshold=0.5, keep_all=True)
         assert [r["uuid"] for r in kept] == ["1", "2", "3"]
-        non_match = next(r for r in kept if r["uuid"] == "2")
-        assert non_match["topic_matched"] is False
-        assert non_match["category"] == ""
+        assert next(r for r in kept if r["uuid"] == "2")["topic_matched"] is False
 
     def test_empty_records(self):
         assert score_records([], ["technology"], fake_encode) == []
+
+
+# ---------------------------------------------------------------------------
+# cached_encoder
+# ---------------------------------------------------------------------------
+
+
+class TestCachedEncoder:
+    def _counting(self):
+        calls = []
+
+        def encode(texts):
+            calls.append(list(texts))
+            return fake_encode(texts)
+
+        return encode, calls
+
+    def test_only_embeds_cache_misses(self, tmp_path):
+        encode, calls = self._counting()
+        enc = cached_encoder(encode, tmp_path / "emb.npz")
+        enc(["software"])
+        enc(["software", "hiking"])  # only "hiking" is new
+        assert calls == [["software"], ["hiking"]]
+
+    def test_persists_across_reload(self, tmp_path):
+        cache_path = tmp_path / "emb.npz"
+        encode, calls = self._counting()
+        out1 = cached_encoder(encode, cache_path)(["software", "hiking"])
+        assert cache_path.exists()
+
+        encode2, calls2 = self._counting()
+        out2 = cached_encoder(encode2, cache_path)(["software", "hiking"])
+        np.testing.assert_array_equal(out1, out2)
+        assert calls2 == []  # everything served from the reloaded cache

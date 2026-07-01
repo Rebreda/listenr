@@ -14,6 +14,7 @@ import, an HF import, or a combination). It never modifies the input manifest.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import sys
 from pathlib import Path
@@ -21,6 +22,7 @@ from pathlib import Path
 import numpy as np
 
 from listenr.build_dataset import load_manifest
+from listenr.constants import STORAGE_BASE
 from listenr.importers.manifest import write_manifest
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -60,15 +62,50 @@ def build_encoder(model_name: str = DEFAULT_MODEL):
     return encode
 
 
+def default_cache_path(model_name: str) -> Path:
+    """Sidecar cache location for a model's embeddings (kept out of the manifest)."""
+    slug = model_name.replace("/", "__")
+    return STORAGE_BASE / "cache" / f"embeddings-{slug}.npz"
+
+
+def cached_encoder(encode, cache_path: Path):
+    """Wrap an ``encode`` fn with a persistent text→embedding cache (an ``.npz``).
+
+    Only cache misses are embedded, and the cache survives across runs — so
+    re-running with a new threshold or extra topics re-embeds nothing already
+    seen. Transparent: same ``(texts) -> ndarray`` signature as the wrapped fn,
+    so ``score_records`` doesn't know or care that caching is happening.
+    """
+    cache: dict[str, np.ndarray] = {}
+    if cache_path.exists():
+        with np.load(cache_path) as data:
+            cache = {key: data[key] for key in data.files}
+
+    def encode_cached(texts: list[str]) -> np.ndarray:
+        texts = list(texts)
+        keys = [hashlib.sha1(t.encode("utf-8")).hexdigest() for t in texts]
+        missing = {key: text for key, text in zip(keys, texts) if key not in cache}
+        if missing:
+            for key, vector in zip(missing, encode(list(missing.values()))):
+                cache[key] = vector
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            np.savez(cache_path, **cache)
+        return np.stack([cache[key] for key in keys])
+
+    return encode_cached
+
+
 def score_records(
     records: list[dict],
     topics: list[str],
     encode,
     text_field: str | None = None,
-) -> list[tuple[float, str, dict]]:
-    """Return ``(best_score, best_topic, record)`` for each record.
+) -> list[dict]:
+    """Return record copies annotated with ``topic_score`` and ``category``.
 
-    Embeddings are L2-normalised, so a dot product is cosine similarity.
+    ``topic_score`` is the cosine similarity to the nearest topic and
+    ``category`` is that topic. Embeddings are L2-normalised, so the dot product
+    is cosine similarity. No threshold is applied here.
     """
     if not records:
         return []
@@ -76,31 +113,23 @@ def score_records(
     text_emb = encode([_text(r, text_field) for r in records])  # (N, d)
     sims = text_emb @ topic_emb.T  # (N, T)
 
-    results: list[tuple[float, str, dict]] = []
+    scored: list[dict] = []
     for record, row in zip(records, sims):
         best = int(np.argmax(row))
-        results.append((float(row[best]), topics[best], record))
-    return results
+        scored.append({**record, "topic_score": round(float(row[best]), 4), "category": topics[best]})
+    return scored
 
 
-def filter_records(
-    scored: list[tuple[float, str, dict]],
-    threshold: float,
-    keep_all: bool = False,
-    annotate: bool = True,
-) -> list[dict]:
-    """Keep matches (or all, if ``keep_all``), annotating score/category."""
+def filter_records(scored: list[dict], threshold: float, keep_all: bool = False) -> list[dict]:
+    """Keep records scoring at/above ``threshold`` (or all, if ``keep_all``).
+
+    Every returned record gets a ``topic_matched`` flag.
+    """
     kept: list[dict] = []
-    for score, topic, record in scored:
-        matched = score >= threshold
-        if not matched and not keep_all:
-            continue
-        out = dict(record)
-        if annotate:
-            out["topic_score"] = round(score, 4)
-            out["category"] = topic if matched else ""
-            out["topic_matched"] = matched
-        kept.append(out)
+    for record in scored:
+        matched = record["topic_score"] >= threshold
+        if matched or keep_all:
+            kept.append({**record, "topic_matched": matched})
     return kept
 
 
@@ -114,8 +143,8 @@ def _load_topics(topic_args: list[str] | None, topics_file: Path | None) -> list
     return topics
 
 
-def _report(scored: list[tuple[float, str, dict]], threshold: float) -> None:
-    scores = np.array([s for s, _, _ in scored]) if scored else np.array([0.0])
+def _report(scored: list[dict], threshold: float) -> None:
+    scores = np.array([r["topic_score"] for r in scored]) if scored else np.array([0.0])
     matched = int((scores >= threshold).sum())
     logger.info(
         "Scored %d clip(s): %d match at threshold %.2f (score min/median/max = %.3f/%.3f/%.3f)",
@@ -126,10 +155,9 @@ def _report(scored: list[tuple[float, str, dict]], threshold: float) -> None:
         float(np.median(scores)),
         float(scores.max()),
     )
-    ranked = sorted(scored, key=lambda t: t[0], reverse=True)
     logger.info("Top matches:")
-    for score, topic, record in ranked[:5]:
-        logger.info("  %.3f [%s] %s", score, topic, _text(record)[:80])
+    for record in sorted(scored, key=lambda r: r["topic_score"], reverse=True)[:5]:
+        logger.info("  %.3f [%s] %s", record["topic_score"], record["category"], _text(record)[:80])
 
 
 def main() -> None:
@@ -170,6 +198,8 @@ def main() -> None:
     )
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Embedding model (default: {DEFAULT_MODEL}).")
     parser.add_argument("--text-field", default=None, help="Manifest field to classify (default: corrected/raw transcription).")
+    parser.add_argument("--cache", type=Path, default=None, help="Embedding cache file (default: under ~/.listenr/cache).")
+    parser.add_argument("--no-cache", action="store_true", help="Disable the embedding cache (always re-embed).")
     parser.add_argument("--dry-run", action="store_true", help="Report match counts and top hits without writing.")
     args = parser.parse_args()
 
@@ -192,6 +222,11 @@ def main() -> None:
     except RuntimeError as exc:
         logger.error(str(exc))
         sys.exit(1)
+
+    if not args.no_cache:
+        cache_path = args.cache or default_cache_path(args.model)
+        encode = cached_encoder(encode, cache_path)
+        logger.info("Embedding cache: %s", cache_path)
 
     scored = score_records(records, topics, encode, text_field=args.text_field)
     _report(scored, args.threshold)
