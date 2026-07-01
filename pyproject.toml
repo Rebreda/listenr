@@ -22,6 +22,9 @@ mdc = [
     "datacollective>=0.5.2",
     "python-dotenv",
 ]
+categorize = [
+    "sentence-transformers",
+]
 finetune = [
     "transformers>=4.40",
     "peft>=0.11",
@@ -37,6 +40,7 @@ listenr = "listenr.cli:main"
 listenr-asr = "listenr.unified_asr:main"
 listenr-build-dataset = "listenr.build_dataset:main"
 listenr-import-mdc = "listenr.importers.mdc:main"
+listenr-categorize = "listenr.categorize:main"
 listenr-finetune = "listenr.finetune.train:main"
 listenr-merge = "listenr.finetune.merge:main"
 listenr-retranscribe = "listenr.retranscribe:main"

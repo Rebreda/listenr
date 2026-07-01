@@ -148,3 +148,40 @@ uv run listenr-build-dataset \
 ```
 
 `listenr-finetune` stays unchanged and still consumes the generated `hf_dataset/`.
+
+---
+
+## Filtering a manifest by topic
+
+To fine-tune on a single domain (e.g. technology/AI clips out of a mixed
+corpus), filter any manifest by topic before building. `listenr-categorize`
+embeds each transcription and keeps only clips whose best cosine similarity to
+one of your topic phrases meets `--threshold`. The output is a normal manifest,
+so it feeds straight into `listenr-build-dataset`. The input manifest is never
+modified.
+
+```bash
+uv pip install -e .[categorize]
+
+# Tune the threshold first with --dry-run (prints match count + top hits):
+uv run listenr-categorize <input>/manifest.jsonl \
+    --topic "technology" --topic "artificial intelligence" --topic "software" \
+    --threshold 0.35 --dry-run
+
+# Then write the filtered manifest:
+uv run listenr-categorize <input>/manifest.jsonl \
+    --topics-file topics.txt \
+    --threshold 0.35 \
+    --output ~/.listenr/audio_clips/imports/tech_only.jsonl
+
+uv run listenr-build-dataset --manifest ~/.listenr/audio_clips/imports/tech_only.jsonl --format hf
+```
+
+Topics can be given inline (repeat `--topic`) or one-per-line via `--topics-file`.
+Each kept record is annotated with `topic_score` and the matched `category`.
+Use `--keep-all` to annotate every clip instead of dropping non-matches.
+
+> Similarity thresholds are corpus-dependent — start with `--dry-run` and adjust.
+> Note that filtering only finds what's in the source: a lifestyle-speech
+> dataset has few technology clips no matter the threshold, so pick a source
+> that actually contains your target domain.
