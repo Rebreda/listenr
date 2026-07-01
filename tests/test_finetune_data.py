@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from listenr.finetune.data import WhisperDataCollator, prepare_example
+from listenr.finetune.data import WhisperDataCollator, _resample, prepare_example
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +113,42 @@ class TestPrepareExample:
 
         result = prepare_example({"audio_path": audio, "corrected_transcription": "x"}, processor)
         np.testing.assert_array_equal(result["input_features"], expected)
+
+    def test_non_16k_audio_is_resampled_to_16k(self):
+        """A 32 kHz clip is resampled before feature extraction (Whisper needs 16 kHz)."""
+        audio = _make_audio_dict(duration_s=0.5, sample_rate=32000)  # 16000 samples
+        processor = MagicMock()
+        # Mock feature_extractor.sampling_rate is not a real int -> falls back to 16000.
+        processor.feature_extractor.return_value.input_features = [np.zeros((80, 3000))]
+        processor.tokenizer.return_value.input_ids = [1]
+
+        prepare_example({"audio_path": audio, "corrected_transcription": "hi"}, processor)
+
+        call = processor.feature_extractor.call_args
+        assert call.kwargs["sampling_rate"] == 16000  # always the target rate
+        passed_array = call.args[0]
+        assert len(passed_array) == 8000  # 16000 samples @32k -> 8000 @16k
+
+
+# ---------------------------------------------------------------------------
+# _resample
+# ---------------------------------------------------------------------------
+
+
+class TestResample:
+    def test_noop_when_rates_match(self):
+        array = np.zeros(1000, dtype=np.float32)
+        assert _resample(array, 16000, 16000) is array
+
+    def test_downsamples_length_by_ratio(self):
+        array = np.zeros(32000, dtype=np.float32)
+        out = _resample(array, 32000, 16000)
+        assert len(out) == 16000
+
+    def test_upsamples_length_by_ratio(self):
+        array = np.zeros(8000, dtype=np.float32)
+        out = _resample(array, 8000, 16000)
+        assert len(out) == 16000
 
 
 # ---------------------------------------------------------------------------

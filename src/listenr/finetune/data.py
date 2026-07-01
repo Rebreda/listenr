@@ -61,6 +61,30 @@ def make_processor(model_id: str, language: str, task: str) -> "WhisperProcessor
 # Feature preparation
 # ---------------------------------------------------------------------------
 
+DEFAULT_TARGET_SAMPLE_RATE = 16_000
+
+
+def _resample(array: Any, orig_sr: int, target_sr: int) -> Any:
+    """Resample a mono waveform to *target_sr* (no-op when already matching).
+
+    Whisper's feature extractor assumes a fixed sample rate (16 kHz) and does
+    not resample. Imported datasets are frequently at other rates (e.g. MDC
+    Common Voice clips are 32 kHz), so we resample here before feature
+    extraction; otherwise the log-Mel features are computed against the wrong
+    rate and training silently degrades.
+    """
+    if int(orig_sr) == int(target_sr):
+        return array
+    from math import gcd
+
+    from scipy.signal import resample_poly
+
+    divisor = gcd(int(orig_sr), int(target_sr))
+    up = int(target_sr) // divisor
+    down = int(orig_sr) // divisor
+    return resample_poly(array, up, down).astype("float32")
+
+
 def prepare_example(batch: dict, processor: Any) -> dict:
     """Convert a single dataset example into model-ready tensors.
 
@@ -70,6 +94,9 @@ def prepare_example(batch: dict, processor: Any) -> dict:
     * A plain file-path string — loaded on-the-fly with ``soundfile``.
     * A decoded HuggingFace :class:`datasets.Audio` dict with keys
       ``array`` and ``sampling_rate`` — used directly (legacy / test usage).
+
+    Audio is resampled to the feature extractor's expected rate (16 kHz) so
+    that clips imported at other sample rates train correctly.
 
     Returns a dict with:
 
@@ -88,11 +115,21 @@ def prepare_example(batch: dict, processor: Any) -> dict:
         array, sample_rate = sf.read(audio, dtype="float32")
         if array.ndim > 1:          # stereo → mono
             array = array.mean(axis=1)
-        audio = {"array": array, "sampling_rate": sample_rate}
+    else:
+        array = audio["array"]
+        sample_rate = audio["sampling_rate"]
+
+    # Whisper is fixed at 16 kHz; fall back to that when the extractor doesn't
+    # report a real rate (e.g. mocked processors in tests).
+    target_sr = getattr(processor.feature_extractor, "sampling_rate", None)
+    if not isinstance(target_sr, int):
+        target_sr = DEFAULT_TARGET_SAMPLE_RATE
+
+    array = _resample(array, sample_rate, target_sr)
 
     input_features = processor.feature_extractor(
-        audio["array"],
-        sampling_rate=audio["sampling_rate"],
+        array,
+        sampling_rate=target_sr,
     ).input_features[0]
 
     labels = processor.tokenizer(batch["corrected_transcription"]).input_ids
