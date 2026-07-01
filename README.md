@@ -13,6 +13,7 @@ Record your voice. Clean it up with local AI. Fine-tune a Whisper model. Deploy 
 <a href="docs/setup.md">Setup</a> &nbsp;|&nbsp;
 <a href="docs/configuration.md">Configuration</a> &nbsp;|&nbsp;
 <a href="docs/recording.md">Recording</a> &nbsp;|&nbsp;
+<a href="docs/dataset.md">Dataset</a> &nbsp;|&nbsp;
 <a href="docs/troubleshooting.md">Troubleshooting</a>
 
 <a href="https://lemonade-server.ai" target="_blank" rel="noopener">
@@ -76,6 +77,12 @@ python scripts/test_merged.py --keyword YourDomainWord
 
 See [docs/setup.md](docs/setup.md) for full installation details.
 
+If you want to mix in a Mozilla Data Collective ASR dataset, install the
+optional MDC extra, import it into a separate Listenr-compatible manifest with
+`uv run listenr-import-mdc <dataset-id>`, then pass that manifest to
+`listenr-build-dataset` alongside your normal one.
+See [docs/dataset.md](docs/dataset.md) for details.
+
 ## Under the hood
 
 **Recording & transcription** - Listenr streams your microphone to Lemonade's `/realtime` WebSocket in ~85 ms chunks (16 kHz). Lemonade's voice activity detection segments speech, runs Whisper.cpp, and streams back transcripts.
@@ -93,7 +100,7 @@ See [docs/setup.md](docs/setup.md) for full installation details.
 | [docs/setup.md](docs/setup.md) | Installation, Lemonade Server, microphone setup |
 | [docs/configuration.md](docs/configuration.md) | Full `config.ini` reference, VAD tuning, available models |
 | [docs/recording.md](docs/recording.md) | CLI usage, how recording works, batch transcription |
-| [docs/dataset.md](docs/dataset.md) | Building train/dev/test splits, CSV and HF formats |
+| [docs/dataset.md](docs/dataset.md) | Building train/dev/test splits, CSV and HF formats, and the optional Mozilla Data Collective import |
 | [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Common errors and fixes |
 

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from listenr.build_dataset import (
     load_manifest,
+    load_manifests,
     validate_entry,
     parse_split,
     assign_splits,
@@ -93,6 +94,18 @@ class TestLoadManifest:
         mf = tmp_path / "manifest.jsonl"
         mf.write_text("")
         assert load_manifest(mf) == []
+
+
+class TestLoadManifests:
+    def test_combines_records_from_multiple_files(self, tmp_path):
+        left = tmp_path / "left.jsonl"
+        right = tmp_path / "right.jsonl"
+        left.write_text('{"uuid":"a"}\n', encoding="utf-8")
+        right.write_text('{"uuid":"b"}\n{"uuid":"c"}\n', encoding="utf-8")
+
+        loaded = load_manifests([left, right])
+
+        assert [row["uuid"] for row in loaded] == ["a", "b", "c"]
 
 
 # ---------------------------------------------------------------------------
