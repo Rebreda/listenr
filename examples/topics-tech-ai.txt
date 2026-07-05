@@ -1,0 +1,11 @@
+# Example topic phrases for listenr-categorize.
+# One phrase per line; blank lines and #-comments are ignored.
+# Each transcription is scored against every phrase; the best match wins.
+technology
+artificial intelligence
+machine learning
+software engineering
+computers and programming
+data science
+robotics
+the internet and web

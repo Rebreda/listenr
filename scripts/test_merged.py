@@ -27,6 +27,7 @@ Requires: transformers and torch (audio decoding handled by pipeline via ffmpeg 
 import argparse
 import json
 import logging
+import re
 import sys
 import textwrap
 import warnings
@@ -76,6 +77,9 @@ def make_asr(model_id_or_path: str | Path):
         "automatic-speech-recognition",
         model=str(model_id_or_path),
         device=device,
+        # Required for clips longer than 30s (long-form generation); harmless
+        # for short clips.
+        return_timestamps=True,
     )
 
 
@@ -148,9 +152,32 @@ def _col(text: str, width: int) -> str:
 
 
 def keyword_hits(text: str, keywords: list[str]) -> list[str]:
-    """Return the subset of *keywords* found (case-insensitive) in *text*."""
+    """Return the subset of *keywords* found (case-insensitive) in *text*.
+
+    Matches at word boundaries so short keywords like "ai" don't hit inside
+    unrelated words ("said"); suffixes still match ("robot" -> "robotics").
+    """
     t = text.lower()
-    return [kw for kw in keywords if kw.lower() in t]
+    return [kw for kw in keywords if re.search(r"\b" + re.escape(kw.lower()), t)]
+
+
+def _hit_map(corrected: str, model_text: str, keywords: list[str]) -> dict[str, bool]:
+    """For each keyword expected in *corrected*, whether *model_text* produced it."""
+    expected = keyword_hits(corrected, keywords)
+    found    = [f.lower() for f in keyword_hits(model_text, keywords)]
+    return {kw: kw.lower() in found for kw in expected}
+
+
+def _print_keyword_line(label: str, hit_map: dict[str, bool]) -> None:
+    hits   = [kw for kw, ok in hit_map.items() if ok]
+    misses = [kw for kw, ok in hit_map.items() if not ok]
+    parts  = []
+    if hits:
+        parts.append("HIT:  " + ", ".join(hits))
+    if misses:
+        parts.append("MISS: " + ", ".join(misses))
+    if parts:
+        print(f"  Keywords ({label}) — " + "   ".join(parts))
 
 
 def print_result(
@@ -159,55 +186,45 @@ def print_result(
     merged_text: str,
     audio_path: Path,
     keywords: list[str] | None = None,
-) -> dict[str, bool]:
-    """Print one result row.  Returns a {keyword: hit} map for tallying.
+    base_text: str | None = None,
+) -> dict[str, dict[str, bool]]:
+    """Print one result row.
 
-    When keywords are active the layout is:
-      RAW (Whisper)          — what the base model produced (likely wrong)
-      FINE-TUNED (merged)    — what the new model produces
-      CORRECTED (ground truth) — the LLM-corrected target
-    Hit = keyword found in merged output.  Expected = keyword in corrected.
+    Returns {"merged": {keyword: hit}, "base": {keyword: hit}} for tallying
+    ("base" is empty unless *base_text* is given).  The left column is the
+    live base-model transcription when *base_text* is given, otherwise the
+    manifest's raw_transcription.  Hit = keyword found in the model output;
+    expected = keyword in corrected_transcription (the ground truth).
     """
     raw       = rec.get("raw_transcription", "")       if rec else ""
     corrected = rec.get("corrected_transcription", "")  if rec else ""
     duration  = rec.get("duration_s", 0)               if rec else 0
     whisper   = rec.get("whisper_model", "")            if rec else ""
 
+    left_label = "ORIGINAL (base)" if base_text is not None else "RAW (Whisper)"
+    left_text  = base_text if base_text is not None else raw
+
     w = 40
     print(f"\n{'─' * 90}")
     print(f"  Clip {idx:>2}  {audio_path.name}  ({duration:.1f}s  {whisper})")
     print(f"{'─' * 90}")
 
-    if keywords:
-        # Three-row layout: raw | merged | corrected (ground truth)
-        print(f"  {'RAW (Whisper)':<{w}}  {'FINE-TUNED (merged)':<{w}}")
-        print(f"  {_col(raw, w):<{w}}  {_col(merged_text, w):<{w}}")
+    print(f"  {left_label:<{w}}  {'FINE-TUNED (merged)':<{w}}")
+    print(f"  {_col(left_text, w):<{w}}  {_col(merged_text, w):<{w}}")
+    if keywords or (corrected and corrected != raw):
         print(f"\n  CORRECTED (ground truth)")
         print(f"  {_col(corrected, w)}")
-    else:
-        print(f"  {'ORIGINAL (Whisper)':<{w}}  {'FINE-TUNED (merged)':<{w}}")
-        print(f"  {_col(raw, w):<{w}}  {_col(merged_text, w):<{w}}")
-        if corrected and corrected != raw:
-            print(f"\n  LLM-corrected ground truth")
-            print(f"  {_col(corrected, w)}")
 
-    hit_map: dict[str, bool] = {}
+    result = {"merged": {}, "base": {}}
     if keywords:
-        # expected = keywords present in corrected_transcription (the target)
-        expected = keyword_hits(corrected, keywords)
-        found    = keyword_hits(merged_text, keywords)
-        hit_map  = {kw: (kw.lower() in [f.lower() for f in found]) for kw in expected}
-        hits   = [kw for kw, ok in hit_map.items() if ok]
-        misses = [kw for kw, ok in hit_map.items() if not ok]
-        parts  = []
-        if hits:
-            parts.append("HIT:  " + ", ".join(hits))
-        if misses:
-            parts.append("MISS: " + ", ".join(misses))
-        if parts:
-            print(f"\n  Keywords — " + "   ".join(parts))
+        result["merged"] = _hit_map(corrected, merged_text, keywords)
+        print()
+        if base_text is not None:
+            result["base"] = _hit_map(corrected, base_text, keywords)
+            _print_keyword_line("base", result["base"])
+        _print_keyword_line("fine-tuned", result["merged"])
 
-    return hit_map
+    return result
 
 
 def _resolve_base_model(merged_path: Path, override: str | None) -> str:
@@ -268,9 +285,15 @@ def main():
                              "whether the new model now produces the keyword. "
                              "Repeat: --keyword Claude --keyword Cursor")
     parser.add_argument("--base-model", type=str, default=None,
-                        help="Base model ID for --audio side-by-side comparison "
+                        help="Base model ID for side-by-side comparison "
                              "(default: read from merged model's config, fall back to "
                              "openai/whisper-small)")
+    parser.add_argument("--compare-base", action="store_true",
+                        help="Also transcribe each manifest clip with the base model, "
+                             "so the side-by-side and keyword recall compare live "
+                             "base-model output instead of the manifest's raw text. "
+                             "Use for imported manifests, where raw_transcription is "
+                             "the ground truth rather than Whisper output.")
     args = parser.parse_args()
 
     if not args.model.exists():
@@ -288,6 +311,9 @@ def main():
         return
 
     asr = make_asr(args.model)
+    base_asr = None
+    if args.compare_base:
+        base_asr = make_asr(_resolve_base_model(args.model, args.base_model))
 
     # ── manifest mode ─────────────────────────────────────────────────────────
     keywords = args.keywords or []
@@ -309,28 +335,36 @@ def main():
     print()
 
     total = len(entries)
-    # tally[keyword] = [hits, total_expected]
-    tally: dict[str, list[int]] = {kw: [0, 0] for kw in keywords}
+    # tally[model][keyword] = [hits, total_expected]
+    tally: dict[str, dict[str, list[int]]] = {
+        model: {kw: [0, 0] for kw in keywords}
+        for model in (("base", "merged") if base_asr else ("merged",))
+    }
 
     for i, rec in enumerate(entries, 1):
         audio_path = Path(rec["audio_path"])
         print(f"  [{i}/{total}] {audio_path.name} ...", end="", flush=True)
         merged_text = asr(str(audio_path), generate_kwargs=GENERATE_KWARGS)["text"].strip()
+        base_text = None
+        if base_asr:
+            base_text = base_asr(str(audio_path), generate_kwargs=GENERATE_KWARGS)["text"].strip()
         print(f"\r", end="")
-        hit_map = print_result(i, rec, merged_text, audio_path, keywords or None)
-        for kw, hit in hit_map.items():
-            tally[kw][1] += 1
-            if hit:
-                tally[kw][0] += 1
+        result = print_result(i, rec, merged_text, audio_path, keywords or None, base_text)
+        for model, hit_map in result.items():
+            for kw, hit in hit_map.items():
+                tally[model][kw][1] += 1
+                if hit:
+                    tally[model][kw][0] += 1
 
     print(f"\n{'─' * 90}")
     print(f"  Done — {total} clips transcribed with {args.model.name}")
-    if tally:
-        print(f"\n  Keyword recall")
-        for kw, (hits, total_kw) in tally.items():
-            pct = 100 * hits / total_kw if total_kw else 0
-            bar = ("█" * hits) + ("░" * (total_kw - hits))
-            print(f"    {kw:<20}  {hits}/{total_kw}  ({pct:.0f}%)  {bar}")
+    if keywords:
+        for model, kw_tally in tally.items():
+            print(f"\n  Keyword recall — {model}")
+            for kw, (hits, total_kw) in kw_tally.items():
+                pct = 100 * hits / total_kw if total_kw else 0
+                bar = ("█" * hits) + ("░" * (total_kw - hits))
+                print(f"    {kw:<20}  {hits}/{total_kw}  ({pct:.0f}%)  {bar}")
     print(f"{'─' * 90}\n")
 
 

@@ -25,6 +25,12 @@ uv run listenr-build-dataset --format both
 
 # Preview stats without writing anything
 uv run listenr-build-dataset --dry-run
+
+# Combine your local manifest with an imported MDC manifest
+uv run listenr-build-dataset \
+    --manifest ~/.listenr/audio_clips/manifest.jsonl \
+    --manifest ~/.listenr/audio_clips/imports/mdc/<dataset-id>/manifest.jsonl \
+    --format hf
 ```
 
 ---
@@ -33,7 +39,7 @@ uv run listenr-build-dataset --dry-run
 
 | Flag | Default | Description |
 |---|---|---|
-| `--manifest PATH` | `~/.listenr/audio_clips/manifest.jsonl` | Input manifest file |
+| `--manifest PATH` | `~/.listenr/audio_clips/manifest.jsonl` | Input manifest file. Pass multiple times to combine manifests. |
 | `--output DIR` | `~/listenr_dataset` | Output directory |
 | `--split TRAIN/DEV/TEST` | `80/10/10` | Split percentages |
 | `--min-duration SECS` | `0.3` | Minimum clip duration |
@@ -92,3 +98,103 @@ listenr-build-dataset \
 ```
 
 The original `manifest.jsonl` is never modified.
+
+---
+
+## Importing external datasets
+
+You can mix third-party ASR datasets into fine-tuning without changing Listenr's
+existing flow. Each importer is optional (behind its own extra and lazily
+imported) and non-destructive: it writes a *separate* manifest under
+`~/.listenr/audio_clips/imports/<source>/<dataset>/manifest.jsonl` and never
+touches your primary `manifest.jsonl`. You then pass one or more manifests to
+`listenr-build-dataset`.
+
+Every importer normalises its source onto the same manifest schema via a shared
+mapping (first matching column wins). Both importers accept per-dataset column
+overrides for unusual layouts:
+
+| Flag | Description |
+|---|---|
+| `--audio-column NAME` | Source column holding the audio path/clip |
+| `--text-column NAME` | Source column holding the transcription |
+| `--split-column NAME` | Source column holding the split name |
+
+### Mozilla Data Collective
+
+The `datacollective` SDK extracts real audio files and returns a DataFrame whose
+ASR columns are normally `audio_path` / `transcription`.
+
+The key is read from the environment; a gitignored `.env` in the repo root is
+loaded automatically if present.
+
+```bash
+uv pip install -e .[mdc]
+export MDC_API_KEY=your-api-key-here   # or put MDC_API_KEY=... in .env
+
+uv run listenr-import-mdc <dataset-id>
+# -> ~/.listenr/audio_clips/imports/mdc/<dataset-id>/manifest.jsonl
+```
+
+### Hugging Face
+
+HF stores audio as an in-memory feature, so the importer materialises each clip
+to a WAV under the import's `audio/` directory. Defaults target Common
+Voice-style datasets (`audio` + `sentence`).
+
+```bash
+uv pip install -e .[hf]
+
+uv run listenr-import-hf mozilla-foundation/common_voice_17_0 --config en --split train
+# -> ~/.listenr/audio_clips/imports/hf/mozilla-foundation__common_voice_17_0/manifest.jsonl
+```
+
+### Building from imported manifests
+
+Use an imported manifest alone, or combine it with your own recordings:
+
+```bash
+uv run listenr-build-dataset \
+    --manifest ~/.listenr/audio_clips/manifest.jsonl \
+    --manifest ~/.listenr/audio_clips/imports/mdc/<dataset-id>/manifest.jsonl \
+    --format hf
+```
+
+`listenr-finetune` stays unchanged and still consumes the generated `hf_dataset/`.
+
+---
+
+## Filtering a manifest by topic
+
+To fine-tune on a single domain (e.g. technology/AI clips out of a mixed
+corpus), filter any manifest by topic before building. `listenr-categorize`
+embeds each transcription and keeps only clips whose best cosine similarity to
+one of your topic phrases meets `--threshold`. The output is a normal manifest,
+so it feeds straight into `listenr-build-dataset`. The input manifest is never
+modified.
+
+```bash
+uv pip install -e .[categorize]
+
+# Tune the threshold first with --dry-run (prints match count + top hits):
+uv run listenr-categorize <input>/manifest.jsonl \
+    --topic "technology" --topic "artificial intelligence" --topic "software" \
+    --threshold 0.35 --dry-run
+
+# Then write the filtered manifest:
+uv run listenr-categorize <input>/manifest.jsonl \
+    --topics-file topics.txt \
+    --threshold 0.35 \
+    --output ~/.listenr/audio_clips/imports/tech_only.jsonl
+
+uv run listenr-build-dataset --manifest ~/.listenr/audio_clips/imports/tech_only.jsonl --format hf
+```
+
+Topics can be given inline (repeat `--topic`) or one-per-line via `--topics-file`.
+Each kept record is annotated with `topic_score` and the matched `category`.
+Use `--keep-all` to annotate every clip instead of dropping non-matches.
+
+> Similarity thresholds are corpus-dependent — start with `--dry-run` and adjust.
+> Note that filtering only finds what's in the source: a lifestyle-speech
+> dataset has few technology clips no matter the threshold, so pick a source
+> that actually contains your target domain.

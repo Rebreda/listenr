@@ -81,6 +81,14 @@ def _manifest_path() -> Path:
     return STORAGE_BASE / "manifest.jsonl"
 
 
+def load_manifests(manifest_paths: list[Path]) -> list[dict]:
+    """Load and concatenate records from one or more manifest files."""
+    records: list[dict] = []
+    for manifest_path in manifest_paths:
+        records.extend(load_manifest(manifest_path))
+    return records
+
+
 def load_manifest(manifest_path: Path) -> list[dict]:
     """Load all records from manifest.jsonl."""
     if not manifest_path.exists():
@@ -266,8 +274,12 @@ def main() -> None:
     parser.add_argument(
         "--manifest",
         type=Path,
+        action="append",
         default=None,
-        help="Path to manifest.jsonl (default: from config)",
+        help=(
+            "Path to manifest.jsonl. Pass more than once to combine multiple "
+            "manifests. Defaults to the configured primary manifest when omitted."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -338,7 +350,7 @@ def main() -> None:
             sys.exit(1)
         remap_old, remap_new = parts[0], parts[1]
 
-    manifest_path = args.manifest or _manifest_path()
+    manifest_paths = args.manifest or [_manifest_path()]
     output_dir = Path(args.output).expanduser()
 
     try:
@@ -347,8 +359,12 @@ def main() -> None:
         logger.error(f"Invalid --split value: {e}")
         sys.exit(1)
 
-    records = load_manifest(manifest_path)
-    logger.info(f"Loaded {len(records)} records from {manifest_path}")
+    records = load_manifests(manifest_paths)
+    logger.info(
+        "Loaded %d record(s) from %d manifest(s)",
+        len(records),
+        len(manifest_paths),
+    )
 
     if remap_old is not None:
         remapped = 0

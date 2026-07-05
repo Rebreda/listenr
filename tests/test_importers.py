@@ -1,0 +1,198 @@
+"""Unit tests for the source importers and their shared manifest core."""
+
+import io
+import json
+import sys
+import types
+from pathlib import Path
+
+import numpy as np
+import soundfile as sf
+
+from listenr.importers import manifest as m
+from listenr.importers.mapping import FieldMapping
+
+
+def _wav(path: Path, duration_s: float = 1.5, sample_rate: int = 16_000) -> Path:
+    samples = np.zeros(int(duration_s * sample_rate), dtype="float32")
+    sf.write(str(path), samples, sample_rate)
+    return path
+
+
+# ---------------------------------------------------------------------------
+# FieldMapping
+# ---------------------------------------------------------------------------
+
+
+class TestFieldMapping:
+    def test_overrides_take_priority_as_sole_candidate(self):
+        mapping = FieldMapping().with_overrides(audio="path", text="caption")
+        assert mapping.audio == ("path",)
+        assert mapping.text == ("caption",)
+        # Unset overrides leave defaults untouched.
+        assert mapping.split == ("split",)
+
+    def test_none_overrides_are_ignored(self):
+        base = FieldMapping()
+        assert base.with_overrides(audio=None, text=None) == base
+
+
+# ---------------------------------------------------------------------------
+# records_from_rows — file-based audio (MDC shape)
+# ---------------------------------------------------------------------------
+
+
+class TestRecordsFromFileRows:
+    def test_builds_records_from_paths(self, tmp_path):
+        audio_path = _wav(tmp_path / "clip.wav")
+        rows = [{"audio_path": str(audio_path), "transcription": "hello", "split": "train"}]
+
+        records, skipped = m.records_from_rows(
+            rows,
+            source="mdc",
+            dataset_id="ds-1",
+            mapping=FieldMapping(),
+            audio_dir=tmp_path / "audio",
+            dataset_name="Sample",
+        )
+
+        assert skipped == 0
+        assert records[0]["audio_path"] == str(audio_path.resolve())
+        assert records[0]["raw_transcription"] == "hello"
+        assert records[0]["corrected_transcription"] == "hello"
+        assert records[0]["source"] == "mdc"
+        assert records[0]["source_dataset_id"] == "ds-1"
+        assert records[0]["source_dataset_name"] == "Sample"
+        assert records[0]["source_split"] == "train"
+        assert records[0]["sample_rate"] == 16_000
+        assert records[0]["duration_s"] == 1.5
+
+    def test_skips_missing_file_and_missing_text(self, tmp_path):
+        audio_path = _wav(tmp_path / "clip.wav")
+        rows = [
+            {"audio_path": str(audio_path), "transcription": "ok"},
+            {"audio_path": str(tmp_path / "missing.wav"), "transcription": "gone"},
+            {"audio_path": str(audio_path), "transcription": ""},
+        ]
+
+        records, skipped = m.records_from_rows(
+            rows, source="mdc", dataset_id="ds", mapping=FieldMapping(), audio_dir=tmp_path
+        )
+
+        assert len(records) == 1
+        assert skipped == 2
+
+    def test_duration_and_sample_rate_come_from_the_file(self, tmp_path):
+        audio_path = _wav(tmp_path / "clip.wav", duration_s=2.0, sample_rate=8_000)
+        rows = [{"audio_path": str(audio_path), "transcription": "hi"}]
+
+        records, _ = m.records_from_rows(
+            rows, source="mdc", dataset_id="ds", mapping=FieldMapping(), audio_dir=tmp_path
+        )
+
+        assert records[0]["duration_s"] == 2.0
+        assert records[0]["sample_rate"] == 8_000
+
+
+# ---------------------------------------------------------------------------
+# records_from_rows — in-memory audio bytes get materialised to WAV
+# ---------------------------------------------------------------------------
+
+
+class TestRecordsFromInMemoryAudio:
+    def test_materialises_audio_bytes_to_wav(self, tmp_path):
+        buf = io.BytesIO()
+        sf.write(buf, np.zeros(4_000, dtype="float32"), 8_000, format="WAV")
+        rows = [{"audio": {"bytes": buf.getvalue(), "path": "clip.mp3"}, "sentence": "bonjour"}]
+        audio_dir = tmp_path / "audio"
+
+        records, skipped = m.records_from_rows(
+            rows, source="hf", dataset_id="ds", mapping=FieldMapping(audio=("audio",)), audio_dir=audio_dir
+        )
+
+        assert skipped == 0
+        written = Path(records[0]["audio_path"])
+        assert written.exists() and written.parent == audio_dir.resolve()
+        assert records[0]["raw_transcription"] == "bonjour"
+        assert records[0]["sample_rate"] == 8_000
+        assert records[0]["duration_s"] == 0.5
+
+
+# ---------------------------------------------------------------------------
+# write_manifest
+# ---------------------------------------------------------------------------
+
+
+class TestWriteManifest:
+    def test_writes_and_appends(self, tmp_path):
+        manifest_path = tmp_path / "manifest.jsonl"
+        m.write_manifest([{"uuid": "a"}], manifest_path)
+        m.write_manifest([{"uuid": "b"}], manifest_path, append=True)
+
+        lines = manifest_path.read_text(encoding="utf-8").splitlines()
+        assert [json.loads(line)["uuid"] for line in lines] == ["a", "b"]
+
+
+# ---------------------------------------------------------------------------
+# Source loaders with mocked SDKs (no network)
+# ---------------------------------------------------------------------------
+
+
+class TestMDCLoader:
+    def test_import_mdc_dataset_writes_manifest(self, tmp_path, monkeypatch):
+        import pandas as pd
+
+        audio_path = _wav(tmp_path / "clip.wav")
+        fake = types.ModuleType("datacollective")
+        fake.load_dataset = lambda dataset_id, **kw: pd.DataFrame(
+            [{"audio_path": str(audio_path), "transcription": "hello mdc", "split": "train"}]
+        )
+        fake.get_dataset_details = lambda dataset_id: {"name": "Demo"}  # no enable_logging kwarg
+        monkeypatch.setitem(sys.modules, "datacollective", fake)
+
+        from listenr.importers import mdc
+
+        out = tmp_path / "manifest.jsonl"
+        summary = mdc.import_mdc_dataset("demo-1", manifest_path=out)
+
+        assert summary["imported"] == 1
+        assert summary["dataset_name"] == "Demo"
+        record = json.loads(out.read_text().strip())
+        assert record["source"] == "mdc"
+        assert record["raw_transcription"] == "hello mdc"
+
+
+class TestHFLoader:
+    def test_import_hf_dataset_materialises_and_writes(self, tmp_path, monkeypatch):
+        class FakeAudio:
+            def __init__(self, decode=True):
+                self.decode = decode
+
+        class FakeDataset:
+            column_names = ["audio", "sentence"]
+
+            def cast_column(self, name, feature):
+                return self
+
+            def __iter__(self):
+                buf = io.BytesIO()
+                sf.write(buf, np.zeros(16_000, dtype="float32"), 16_000, format="WAV")
+                yield {"audio": {"bytes": buf.getvalue(), "path": "a.mp3"}, "sentence": "hi hf"}
+
+        fake = types.ModuleType("datasets")
+        fake.Audio = FakeAudio
+        fake.load_dataset = lambda dataset_id, config, split=None: FakeDataset()
+        monkeypatch.setitem(sys.modules, "datasets", fake)
+
+        from listenr.importers import hf
+
+        out = tmp_path / "manifest.jsonl"
+        monkeypatch.setattr(hf.m, "default_audio_dir", lambda source, ds: tmp_path / "audio")
+        summary = hf.import_hf_dataset("cv/en", manifest_path=out, config="en", split="train")
+
+        assert summary["imported"] == 1
+        record = json.loads(out.read_text().strip())
+        assert record["source"] == "hf"
+        assert record["raw_transcription"] == "hi hf"
+        assert record["source_split"] == "train"
+        assert Path(record["audio_path"]).exists()
