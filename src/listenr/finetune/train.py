@@ -4,7 +4,7 @@ train.py — CLI entry point for Whisper LoRA fine-tuning.
 
 Loads a HuggingFace DatasetDict produced by ``listenr-build-dataset --format hf``,
 prepares features, wraps the base Whisper model with LoRA adapters, and runs
-``Seq2SeqTrainer``.  Only the adapter weights are saved — the base model is not
+``Seq2SeqTrainer``.  Only the adapter weights are saved, the base model is not
 copied.
 
 Usage:
@@ -32,28 +32,7 @@ import logging
 import sys
 from pathlib import Path
 
-from listenr.constants import (
-    DATASET_OUTPUT,
-    FINETUNE_BASE_MODEL,
-    FINETUNE_BATCH_SIZE,
-    FINETUNE_BF16,
-    FINETUNE_EVAL_STEPS,
-    FINETUNE_FP16,
-    FINETUNE_FREEZE_ENCODER,
-    FINETUNE_GENERATION_MAX_LENGTH,
-    FINETUNE_GRAD_ACCUM_STEPS,
-    FINETUNE_LANGUAGE,
-    FINETUNE_LEARNING_RATE,
-    FINETUNE_LORA_ALPHA,
-    FINETUNE_LORA_DROPOUT,
-    FINETUNE_LORA_R,
-    FINETUNE_LORA_TARGET_MODULES,
-    FINETUNE_MAX_STEPS,
-    FINETUNE_OUTPUT_DIR,
-    FINETUNE_SAVE_STEPS,
-    FINETUNE_TASK,
-    FINETUNE_WARMUP_STEPS,
-)
+from listenr.settings import settings
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("listenr.finetune.train")
@@ -84,76 +63,76 @@ def main() -> None:
         metavar="DIR",
         help=(
             "Path to the hf_dataset directory written by listenr-build-dataset "
-            f"(default: {DATASET_OUTPUT / 'hf_dataset'})"
+            f"(default: {settings.dataset.output_path / 'hf_dataset'})"
         ),
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=FINETUNE_OUTPUT_DIR,
+        default=settings.finetune.output_dir,
         metavar="DIR",
-        help=f"Where to save the LoRA adapter checkpoint (default: {FINETUNE_OUTPUT_DIR})",
+        help=f"Where to save the LoRA adapter checkpoint (default: {settings.finetune.output_dir})",
     )
 
     # --- model ---
     parser.add_argument(
         "--base-model",
-        default=FINETUNE_BASE_MODEL,
+        default=settings.finetune.base_model,
         metavar="MODEL_ID",
-        help=f"HuggingFace model id to fine-tune (default: {FINETUNE_BASE_MODEL})",
+        help=f"HuggingFace model id to fine-tune (default: {settings.finetune.base_model})",
     )
     parser.add_argument(
         "--language",
-        default=FINETUNE_LANGUAGE,
-        help=f"Target language for the processor (default: {FINETUNE_LANGUAGE})",
+        default=settings.finetune.language,
+        help=f"Target language for the processor (default: {settings.finetune.language})",
     )
     parser.add_argument(
         "--task",
-        default=FINETUNE_TASK,
+        default=settings.finetune.task,
         choices=["transcribe", "translate"],
-        help=f"Task token prepended during tokenisation (default: {FINETUNE_TASK})",
+        help=f"Task token prepended during tokenisation (default: {settings.finetune.task})",
     )
     parser.add_argument(
         "--no-freeze-encoder",
         dest="freeze_encoder",
         action="store_false",
-        default=FINETUNE_FREEZE_ENCODER,
+        default=settings.finetune.freeze_encoder,
         help="Train the encoder too (default: freeze it)",
     )
 
     # --- LoRA ---
-    parser.add_argument("--lora-r",       type=int,   default=FINETUNE_LORA_R,
-                        help=f"LoRA rank (default: {FINETUNE_LORA_R})")
-    parser.add_argument("--lora-alpha",   type=int,   default=FINETUNE_LORA_ALPHA,
-                        help=f"LoRA scaling factor (default: {FINETUNE_LORA_ALPHA})")
-    parser.add_argument("--lora-dropout", type=float, default=FINETUNE_LORA_DROPOUT,
-                        help=f"LoRA dropout (default: {FINETUNE_LORA_DROPOUT})")
+    parser.add_argument("--lora-r",       type=int,   default=settings.finetune.lora_r,
+                        help=f"LoRA rank (default: {settings.finetune.lora_r})")
+    parser.add_argument("--lora-alpha",   type=int,   default=settings.finetune.lora_alpha,
+                        help=f"LoRA scaling factor (default: {settings.finetune.lora_alpha})")
+    parser.add_argument("--lora-dropout", type=float, default=settings.finetune.lora_dropout,
+                        help=f"LoRA dropout (default: {settings.finetune.lora_dropout})")
 
     # --- training ---
-    parser.add_argument("--max-steps",       type=int,   default=FINETUNE_MAX_STEPS,
-                        help=f"Total training steps (default: {FINETUNE_MAX_STEPS})")
-    parser.add_argument("--batch-size",      type=int,   default=FINETUNE_BATCH_SIZE,
-                        help=f"Per-device train batch size (default: {FINETUNE_BATCH_SIZE})")
-    parser.add_argument("--grad-accum",      type=int,   default=FINETUNE_GRAD_ACCUM_STEPS,
-                        help=f"Gradient accumulation steps (default: {FINETUNE_GRAD_ACCUM_STEPS})")
-    parser.add_argument("--learning-rate",   type=float, default=FINETUNE_LEARNING_RATE,
-                        help=f"Learning rate (default: {FINETUNE_LEARNING_RATE})")
-    parser.add_argument("--warmup-steps",    type=int,   default=FINETUNE_WARMUP_STEPS,
-                        help=f"LR warmup steps (default: {FINETUNE_WARMUP_STEPS})")
-    parser.add_argument("--eval-steps",      type=int,   default=FINETUNE_EVAL_STEPS,
-                        help=f"Evaluate every N steps (default: {FINETUNE_EVAL_STEPS})")
-    parser.add_argument("--save-steps",      type=int,   default=FINETUNE_SAVE_STEPS,
-                        help=f"Save checkpoint every N steps (default: {FINETUNE_SAVE_STEPS})")
+    parser.add_argument("--max-steps",       type=int,   default=settings.finetune.max_steps,
+                        help=f"Total training steps (default: {settings.finetune.max_steps})")
+    parser.add_argument("--batch-size",      type=int,   default=settings.finetune.batch_size,
+                        help=f"Per-device train batch size (default: {settings.finetune.batch_size})")
+    parser.add_argument("--grad-accum",      type=int,   default=settings.finetune.grad_accum_steps,
+                        help=f"Gradient accumulation steps (default: {settings.finetune.grad_accum_steps})")
+    parser.add_argument("--learning-rate",   type=float, default=settings.finetune.learning_rate,
+                        help=f"Learning rate (default: {settings.finetune.learning_rate})")
+    parser.add_argument("--warmup-steps",    type=int,   default=settings.finetune.warmup_steps,
+                        help=f"LR warmup steps (default: {settings.finetune.warmup_steps})")
+    parser.add_argument("--eval-steps",      type=int,   default=settings.finetune.eval_steps,
+                        help=f"Evaluate every N steps (default: {settings.finetune.eval_steps})")
+    parser.add_argument("--save-steps",      type=int,   default=settings.finetune.save_steps,
+                        help=f"Save checkpoint every N steps (default: {settings.finetune.save_steps})")
     parser.add_argument(
         "--fp16",
         action="store_true",
-        default=FINETUNE_FP16,
+        default=settings.finetune.fp16,
         help="Enable fp16 mixed precision (CUDA GPUs; not recommended for AMD ROCm)",
     )
     parser.add_argument(
         "--bf16",
         action="store_true",
-        default=FINETUNE_BF16,
+        default=settings.finetune.bf16,
         help="Enable bf16 mixed precision (recommended for AMD ROCm RDNA2+)",
     )
     parser.add_argument(
@@ -197,7 +176,7 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # 1. Dataset
     # -----------------------------------------------------------------------
-    dataset_path = _resolve_dataset_path(args.dataset, DATASET_OUTPUT)
+    dataset_path = _resolve_dataset_path(args.dataset, settings.dataset.output_path)
     if not dataset_path.exists():
         logger.error(
             f"Dataset not found at {dataset_path}.\n"
@@ -225,7 +204,7 @@ def main() -> None:
         r=args.lora_r,
         alpha=args.lora_alpha,
         dropout=args.lora_dropout,
-        target_modules=FINETUNE_LORA_TARGET_MODULES,
+        target_modules=settings.finetune.lora_target_modules,
     )
     model = apply_lora(model, lora_cfg)
 
@@ -268,7 +247,7 @@ def main() -> None:
         eval_strategy="steps",
         per_device_eval_batch_size=max(1, args.batch_size // 2),
         predict_with_generate=True,
-        generation_max_length=FINETUNE_GENERATION_MAX_LENGTH,
+        generation_max_length=settings.finetune.generation_max_length,
         save_steps=args.save_steps,
         eval_steps=args.eval_steps,
         logging_steps=max(1, args.eval_steps // 4),

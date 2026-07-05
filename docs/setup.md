@@ -72,7 +72,7 @@ lemonade pull Whisper-Base
 lemonade pull gpt-oss-20b-mxfp4-GGUF
 ```
 
-> First-time pulls download weights from Hugging Face. Allow a few minutes depending on connection speed. You can swap models in `~/.config/listenr/config.ini`  - see [configuration.md](configuration.md) for options.
+> First-time pulls download weights from Hugging Face. Allow a few minutes depending on connection speed. You can swap models in `~/.config/listenr/config.toml`  - see [configuration.md](configuration.md) for options.
 
 Verify the server is reachable:
 
@@ -95,5 +95,5 @@ for i, d in enumerate(sd.query_devices()):
 "
 ```
 
-Set `input_device` in `~/.config/listenr/config.ini` to the device name (partial
+Set `input_device` in `~/.config/listenr/config.toml` to the device name (partial
 match works) or its index number. See [configuration.md](configuration.md).

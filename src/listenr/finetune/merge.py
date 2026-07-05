@@ -28,14 +28,14 @@ import logging
 import sys
 from pathlib import Path
 
-from listenr.constants import FINETUNE_OUTPUT_DIR
+from listenr.settings import settings
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("listenr.finetune.merge")
 
 # Default merged-model output sits beside the adapter directory.
-DEFAULT_ADAPTER_DIR = FINETUNE_OUTPUT_DIR
-DEFAULT_OUTPUT_DIR = FINETUNE_OUTPUT_DIR.parent / (FINETUNE_OUTPUT_DIR.name + "_merged")
+DEFAULT_ADAPTER_DIR = settings.finetune.output_dir
+DEFAULT_OUTPUT_DIR = DEFAULT_ADAPTER_DIR.parent / (DEFAULT_ADAPTER_DIR.name + "_merged")
 
 
 # ---------------------------------------------------------------------------

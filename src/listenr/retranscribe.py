@@ -40,8 +40,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from listenr.constants import STORAGE_BASE, WHISPER_MODEL
 from listenr.llm_processor import lemonade_llm_correct, lemonade_transcribe_audio
+from listenr.settings import settings
 from listenr.transcript_utils import clean_transcript
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -53,7 +53,7 @@ logger = logging.getLogger("listenr.retranscribe")
 # ---------------------------------------------------------------------------
 
 def _default_manifest() -> Path:
-    return STORAGE_BASE / "manifest.jsonl"
+    return settings.storage.audio_clips_path / "manifest.jsonl"
 
 
 def _load_manifest(path: Path) -> list[dict]:
@@ -191,7 +191,7 @@ def retranscribe(
     Summary dict with keys ``total``, ``processed``, ``updated``, ``errors``,
     ``skipped``.
     """
-    effective_model = model or WHISPER_MODEL
+    effective_model = model or settings.whisper.model
     records = _load_manifest(manifest_path)
 
     total = len(records)

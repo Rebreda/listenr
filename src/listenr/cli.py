@@ -4,7 +4,7 @@ Listenr CLI: Real-time Microphone Streaming to Lemonade ASR
 
 Streams microphone to Lemonade's /realtime WebSocket endpoint.
 Prints transcriptions as they arrive. Saves audio + transcripts for dataset use.
-All config loaded from config_manager.
+All config loaded from listenr.settings.
 
 Usage:
     listenr
@@ -29,21 +29,20 @@ from listenr.llm_processor import lemonade_llm_correct, lemonade_load_model, lem
 from listenr.transcript_utils import is_hallucination, strip_noise_tags
 from listenr.storage import save_recording, patch_manifest_record
 from listenr.retranscribe import retranscribe_clip
-from listenr.constants import (
-    ASR_RATE,
-    CAPTURE_RATE,
-    CHANNELS,
-    CHUNK_SIZE,
-    INPUT_DEVICE,
-    LLM_CONTEXT_WINDOW,
-    LLM_ENABLED as USE_LLM,
-    LLM_MODEL,
-    STORAGE_BASE,
-    VAD_MAX_SEGMENT_S,
-    VAD_SILENCE_MS,
-    VAD_THRESHOLD,
-    WHISPER_MODEL,
-)
+from listenr.settings import ASR_RATE, settings
+
+CAPTURE_RATE = settings.audio.sample_rate
+CHANNELS = settings.audio.channels
+CHUNK_SIZE = settings.audio.blocksize
+INPUT_DEVICE = settings.audio.input_device
+LLM_CONTEXT_WINDOW = settings.llm.context_window
+USE_LLM = settings.llm.enabled
+LLM_MODEL = settings.llm.model
+STORAGE_BASE = settings.storage.audio_clips_path
+VAD_MAX_SEGMENT_S = settings.vad.max_segment_s
+VAD_SILENCE_MS = settings.vad.silence_duration_ms
+VAD_THRESHOLD = settings.vad.threshold
+WHISPER_MODEL = settings.whisper.model
 
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s: %(message)s')
 log = logging.getLogger('listenr.cli')
@@ -57,8 +56,7 @@ _NEED_RESAMPLE = (CAPTURE_RATE != ASR_RATE)
 
 def get_lemonade_ws_url() -> str:
     """Discover Lemonade WebSocket URL from /v1/health."""
-    from listenr.constants import LLM_API_BASE
-    health_url = LLM_API_BASE.rstrip('/').replace('/api/v1', '') + '/v1/health'
+    health_url = settings.llm.api_base.rstrip('/').replace('/api/v1', '') + '/v1/health'
     try:
         resp = requests.get(health_url, timeout=2)
         resp.raise_for_status()

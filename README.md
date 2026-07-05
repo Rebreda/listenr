@@ -98,7 +98,7 @@ See [docs/dataset.md](docs/dataset.md) for details.
 | Guide | Description |
 |---|---|
 | [docs/setup.md](docs/setup.md) | Installation, Lemonade Server, microphone setup |
-| [docs/configuration.md](docs/configuration.md) | Full `config.ini` reference, VAD tuning, available models |
+| [docs/configuration.md](docs/configuration.md) | Full `config.toml` reference, VAD tuning, available models |
 | [docs/recording.md](docs/recording.md) | CLI usage, how recording works, batch transcription |
 | [docs/dataset.md](docs/dataset.md) | Building train/dev/test splits, CSV and HF formats, and the optional Mozilla Data Collective import |
 | [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |

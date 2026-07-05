@@ -18,18 +18,18 @@ from typing import Any
 import pandas as pd
 import soundfile as sf
 
-from listenr.constants import STORAGE_BASE
 from listenr.importers.mapping import FieldMapping
+from listenr.settings import settings
 
 logger = logging.getLogger("listenr.importers")
 
 
 def default_manifest_path(source: str, dataset_id: str) -> Path:
-    return STORAGE_BASE / "imports" / source / _slug(dataset_id) / "manifest.jsonl"
+    return settings.storage.audio_clips_path / "imports" / source / _slug(dataset_id) / "manifest.jsonl"
 
 
 def default_audio_dir(source: str, dataset_id: str) -> Path:
-    return STORAGE_BASE / "imports" / source / _slug(dataset_id) / "audio"
+    return settings.storage.audio_clips_path / "imports" / source / _slug(dataset_id) / "audio"
 
 
 def _slug(value: str) -> str:

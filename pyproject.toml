@@ -12,6 +12,7 @@ dependencies = [
     "numpy",
     "scipy",
     "pandas",
+    "pydantic-settings>=2.6",
 ]
 
 [project.optional-dependencies]

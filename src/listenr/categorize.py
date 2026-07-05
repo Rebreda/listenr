@@ -22,8 +22,8 @@ from pathlib import Path
 import numpy as np
 
 from listenr.build_dataset import load_manifest
-from listenr.constants import STORAGE_BASE
 from listenr.importers.manifest import write_manifest
+from listenr.settings import settings
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("listenr.categorize")
@@ -65,7 +65,7 @@ def build_encoder(model_name: str = DEFAULT_MODEL):
 def default_cache_path(model_name: str) -> Path:
     """Sidecar cache location for a model's embeddings (kept out of the manifest)."""
     slug = model_name.replace("/", "__")
-    return STORAGE_BASE / "cache" / f"embeddings-{slug}.npz"
+    return settings.storage.audio_clips_path / "cache" / f"embeddings-{slug}.npz"
 
 
 def cached_encoder(encode, cache_path: Path):

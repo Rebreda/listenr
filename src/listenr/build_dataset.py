@@ -30,32 +30,11 @@ import random
 import sys
 from pathlib import Path
 
+from listenr.settings import settings
 from listenr.transcript_utils import strip_noise_tags
-from listenr.constants import (
-    DATASET_FORMAT,
-    DATASET_MIN_CHARS,
-    DATASET_MIN_DURATION,
-    DATASET_OUTPUT,
-    DATASET_SEED,
-    DATASET_SPLIT,
-    DATASET_STRIP_TAGS,
-    STORAGE_BASE,
-)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("listenr.build_dataset")
-
-# ---------------------------------------------------------------------------
-# Defaults (sourced from constants, which read from config at import time)
-# ---------------------------------------------------------------------------
-
-DEFAULT_OUTPUT       = DATASET_OUTPUT
-DEFAULT_SPLIT        = DATASET_SPLIT
-DEFAULT_MIN_DURATION = DATASET_MIN_DURATION
-DEFAULT_MIN_CHARS    = DATASET_MIN_CHARS
-DEFAULT_SEED         = DATASET_SEED
-DEFAULT_FORMAT       = DATASET_FORMAT
-DEFAULT_STRIP_TAGS   = DATASET_STRIP_TAGS
 
 CSV_COLUMNS = [
     "uuid",
@@ -78,7 +57,7 @@ CSV_COLUMNS = [
 
 def _manifest_path() -> Path:
     """Return the manifest.jsonl path from config."""
-    return STORAGE_BASE / "manifest.jsonl"
+    return settings.storage.audio_clips_path / "manifest.jsonl"
 
 
 def load_manifests(manifest_paths: list[Path]) -> list[dict]:
@@ -284,42 +263,42 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=DEFAULT_OUTPUT,
-        help=f"Output directory for dataset files (default: from config, currently {DEFAULT_OUTPUT})",
+        default=settings.dataset.output_path,
+        help=f"Output directory for dataset files (default: from config, currently {settings.dataset.output_path})",
     )
     parser.add_argument(
         "--split",
-        default=DEFAULT_SPLIT,
-        help=f"Train/dev/test split percentages, e.g. 80/10/10 (default: from config, currently {DEFAULT_SPLIT})",
+        default=settings.dataset.split,
+        help=f"Train/dev/test split percentages, e.g. 80/10/10 (default: from config, currently {settings.dataset.split})",
     )
     parser.add_argument(
         "--min-duration",
         type=float,
-        default=DEFAULT_MIN_DURATION,
-        help=f"Minimum clip duration in seconds (default: from config, currently {DEFAULT_MIN_DURATION})",
+        default=settings.dataset.min_duration,
+        help=f"Minimum clip duration in seconds (default: from config, currently {settings.dataset.min_duration})",
     )
     parser.add_argument(
         "--min-chars",
         type=int,
-        default=DEFAULT_MIN_CHARS,
-        help=f"Minimum non-whitespace chars in transcription (default: from config, currently {DEFAULT_MIN_CHARS})",
+        default=settings.dataset.min_chars,
+        help=f"Minimum non-whitespace chars in transcription (default: from config, currently {settings.dataset.min_chars})",
     )
     parser.add_argument(
         "--seed",
         type=int,
-        default=DEFAULT_SEED,
-        help=f"Random seed for reproducible splits (default: from config, currently {DEFAULT_SEED})",
+        default=settings.dataset.seed,
+        help=f"Random seed for reproducible splits (default: from config, currently {settings.dataset.seed})",
     )
     parser.add_argument(
         "--format",
         choices=["csv", "hf", "both"],
-        default=DEFAULT_FORMAT,
-        help=f"Output format: csv, hf (HuggingFace datasets), or both (default: from config, currently {DEFAULT_FORMAT})",
+        default=settings.dataset.format,
+        help=f"Output format: csv, hf (HuggingFace datasets), or both (default: from config, currently {settings.dataset.format})",
     )
     parser.add_argument(
         "--no-strip-tags",
         action="store_true",
-        default=not DEFAULT_STRIP_TAGS,
+        default=not settings.dataset.strip_tags,
         help="Preserve parenthesised/bracketed noise tags (e.g. (music)) in transcriptions",
     )
     parser.add_argument(

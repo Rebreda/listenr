@@ -21,14 +21,7 @@ import websockets
 import asyncio
 
 from listenr.llm_processor import lemonade_llm_correct, lemonade_transcribe_audio
-from listenr.constants import (
-    LLM_API_BASE,
-    VAD_THRESHOLD,
-    VAD_SILENCE_MS,
-    VAD_PREFIX_PADDING_MS,
-    VAD_MAX_SEGMENT_S,
-    WHISPER_MODEL as _DEFAULT_WHISPER_MODEL,
-)
+from listenr.settings import settings
 
 logger = logging.getLogger('unified_asr')
 
@@ -66,7 +59,7 @@ class LemonadeUnifiedASR:
         max_segment_s: client-side hard cap on speech segment length in seconds.
             When a segment exceeds this duration, input_audio_buffer.commit is sent
             to force transcription before Whisper's 30s context limit is reached.
-            Defaults to VAD_MAX_SEGMENT_S from config (0 = disabled).
+            Defaults to settings.vad.max_segment_s (0 = disabled).
 
         Lemonade /realtime protocol:
           Client → Server:
@@ -83,14 +76,14 @@ class LemonadeUnifiedASR:
         import base64
 
         if whisper_model is None:
-            whisper_model = _DEFAULT_WHISPER_MODEL
+            whisper_model = settings.whisper.model
         if max_segment_s is None:
-            max_segment_s = VAD_MAX_SEGMENT_S
+            max_segment_s = settings.vad.max_segment_s
         _max_segment_s = float(max_segment_s) if max_segment_s else 0.0
         if lemonade_ws_url is None:
             try:
                 # /v1/health is the Lemonade-specific endpoint (not /api/v1/health)
-                _health_url = LLM_API_BASE.split('/api/')[0] + '/v1/health'
+                _health_url = settings.llm.api_base.split('/api/')[0] + '/v1/health'
                 resp = requests.get(_health_url, timeout=5)
                 ws_port = resp.json().get('websocket_port', 8001)
             except Exception:
@@ -102,9 +95,9 @@ class LemonadeUnifiedASR:
             "session": {
                 "model": whisper_model,
                 "turn_detection": {
-                    "threshold": VAD_THRESHOLD,
-                    "silence_duration_ms": VAD_SILENCE_MS,
-                    "prefix_padding_ms": VAD_PREFIX_PADDING_MS,
+                    "threshold": settings.vad.threshold,
+                    "silence_duration_ms": settings.vad.silence_duration_ms,
+                    "prefix_padding_ms": settings.vad.prefix_padding_ms,
                 },
             },
         }
