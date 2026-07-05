@@ -176,3 +176,39 @@ class TestMDCLoader:
         record = json.loads(out.read_text().strip())
         assert record["source"] == "mdc"
         assert record["raw_transcription"] == "hello mdc"
+
+
+class TestHFLoader:
+    def test_import_hf_dataset_materialises_and_writes(self, tmp_path, monkeypatch):
+        class FakeAudio:
+            def __init__(self, decode=True):
+                self.decode = decode
+
+        class FakeDataset:
+            column_names = ["audio", "sentence"]
+
+            def cast_column(self, name, feature):
+                return self
+
+            def __iter__(self):
+                buf = io.BytesIO()
+                sf.write(buf, np.zeros(16_000, dtype="float32"), 16_000, format="WAV")
+                yield {"audio": {"bytes": buf.getvalue(), "path": "a.mp3"}, "sentence": "hi hf"}
+
+        fake = types.ModuleType("datasets")
+        fake.Audio = FakeAudio
+        fake.load_dataset = lambda dataset_id, config, split=None: FakeDataset()
+        monkeypatch.setitem(sys.modules, "datasets", fake)
+
+        from listenr.importers import hf
+
+        out = tmp_path / "manifest.jsonl"
+        monkeypatch.setattr(hf.m, "default_audio_dir", lambda source, ds: tmp_path / "audio")
+        summary = hf.import_hf_dataset("cv/en", manifest_path=out, config="en", split="train")
+
+        assert summary["imported"] == 1
+        record = json.loads(out.read_text().strip())
+        assert record["source"] == "hf"
+        assert record["raw_transcription"] == "hi hf"
+        assert record["source_split"] == "train"
+        assert Path(record["audio_path"]).exists()

@@ -77,10 +77,10 @@ python scripts/test_merged.py --keyword YourDomainWord
 
 See [docs/setup.md](docs/setup.md) for full installation details.
 
-If you want to mix in a Mozilla Data Collective ASR dataset, install the
-optional MDC extra, import it into a separate Listenr-compatible manifest with
-`uv run listenr-import-mdc <dataset-id>`, then pass that manifest to
-`listenr-build-dataset` alongside your normal one.
+If you want to mix in an external ASR dataset, use the optional importers to
+write a separate Listenr-compatible manifest — `listenr-import-mdc <dataset-id>`
+(Mozilla Data Collective) or `listenr-import-hf <dataset-id>` (Hugging Face) —
+then pass that manifest to `listenr-build-dataset` alongside your normal one.
 See [docs/dataset.md](docs/dataset.md) for details.
 
 ## Under the hood

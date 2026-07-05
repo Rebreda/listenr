@@ -111,8 +111,8 @@ touches your primary `manifest.jsonl`. You then pass one or more manifests to
 `listenr-build-dataset`.
 
 Every importer normalises its source onto the same manifest schema via a shared
-mapping (first matching column wins) and accepts per-dataset column overrides
-for unusual layouts:
+mapping (first matching column wins). Both importers accept per-dataset column
+overrides for unusual layouts:
 
 | Flag | Description |
 |---|---|
@@ -134,6 +134,19 @@ export MDC_API_KEY=your-api-key-here   # or put MDC_API_KEY=... in .env
 
 uv run listenr-import-mdc <dataset-id>
 # -> ~/.listenr/audio_clips/imports/mdc/<dataset-id>/manifest.jsonl
+```
+
+### Hugging Face
+
+HF stores audio as an in-memory feature, so the importer materialises each clip
+to a WAV under the import's `audio/` directory. Defaults target Common
+Voice-style datasets (`audio` + `sentence`).
+
+```bash
+uv pip install -e .[hf]
+
+uv run listenr-import-hf mozilla-foundation/common_voice_17_0 --config en --split train
+# -> ~/.listenr/audio_clips/imports/hf/mozilla-foundation__common_voice_17_0/manifest.jsonl
 ```
 
 ### Building from imported manifests

@@ -683,6 +683,10 @@ finetune = [
     { name = "tensorboard" },
     { name = "transformers" },
 ]
+hf = [
+    { name = "datasets" },
+    { name = "python-dotenv" },
+]
 mdc = [
     { name = "datacollective" },
     { name = "python-dotenv" },
@@ -693,12 +697,14 @@ requires-dist = [
     { name = "accelerate", marker = "extra == 'finetune'", specifier = ">=0.29" },
     { name = "datacollective", marker = "extra == 'mdc'", specifier = ">=0.5.2" },
     { name = "datasets", marker = "extra == 'finetune'" },
+    { name = "datasets", marker = "extra == 'hf'" },
     { name = "evaluate", marker = "extra == 'finetune'" },
     { name = "jiwer", marker = "extra == 'finetune'" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "peft", marker = "extra == 'finetune'", specifier = ">=0.11" },
     { name = "pytest", marker = "extra == 'dev'" },
+    { name = "python-dotenv", marker = "extra == 'hf'" },
     { name = "python-dotenv", marker = "extra == 'mdc'" },
     { name = "requests" },
     { name = "scipy" },
@@ -709,7 +715,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'finetune'", specifier = ">=4.40" },
     { name = "websockets" },
 ]
-provides-extras = ["dev", "mdc", "categorize", "finetune"]
+provides-extras = ["dev", "mdc", "hf", "categorize", "finetune"]
 
 [[package]]
 name = "markdown"
