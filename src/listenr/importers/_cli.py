@@ -11,13 +11,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 
 def load_env() -> None:
-    """Load a local ``.env`` into the environment if python-dotenv is available.
-
-    Importers authenticate via environment variables (``MDC_API_KEY`` for MDC,
-    ``HF_TOKEN`` for gated Hugging Face datasets). Loading ``.env`` here lets
-    users keep those in a gitignored file instead of exporting them each run.
-    No-ops when python-dotenv isn't installed.
-    """
+    """Load a local ``.env`` (``MDC_API_KEY``, ``HF_TOKEN``) if python-dotenv is available."""
     try:
         from dotenv import find_dotenv, load_dotenv
     except ImportError:

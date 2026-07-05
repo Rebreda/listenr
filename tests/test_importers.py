@@ -82,56 +82,40 @@ class TestRecordsFromFileRows:
         assert len(records) == 1
         assert skipped == 2
 
-    def test_prefers_column_duration_and_sample_rate(self, tmp_path):
+    def test_duration_and_sample_rate_come_from_the_file(self, tmp_path):
         audio_path = _wav(tmp_path / "clip.wav", duration_s=2.0, sample_rate=8_000)
-        rows = [{"audio_path": str(audio_path), "transcription": "hi", "duration_ms": 750, "sample_rate": 22_050}]
+        rows = [{"audio_path": str(audio_path), "transcription": "hi"}]
 
         records, _ = m.records_from_rows(
             rows, source="mdc", dataset_id="ds", mapping=FieldMapping(), audio_dir=tmp_path
         )
 
-        assert records[0]["duration_s"] == 0.75
-        assert records[0]["sample_rate"] == 22_050
+        assert records[0]["duration_s"] == 2.0
+        assert records[0]["sample_rate"] == 8_000
 
 
 # ---------------------------------------------------------------------------
-# records_from_rows — in-memory audio (array / bytes) gets materialised to WAV
+# records_from_rows — in-memory audio bytes get materialised to WAV
 # ---------------------------------------------------------------------------
 
 
 class TestRecordsFromInMemoryAudio:
-    def test_materialises_audio_array_to_wav(self, tmp_path):
-        array = np.zeros(8_000, dtype="float32")
-        rows = [{"audio": {"array": array, "sampling_rate": 16_000, "path": "clip.mp3"}, "sentence": "hola"}]
+    def test_materialises_audio_bytes_to_wav(self, tmp_path):
+        buf = io.BytesIO()
+        sf.write(buf, np.zeros(4_000, dtype="float32"), 8_000, format="WAV")
+        rows = [{"audio": {"bytes": buf.getvalue(), "path": "clip.mp3"}, "sentence": "bonjour"}]
         audio_dir = tmp_path / "audio"
 
         records, skipped = m.records_from_rows(
-            rows,
-            source="hf",
-            dataset_id="cv/en",
-            mapping=FieldMapping(audio=("audio",)),
-            audio_dir=audio_dir,
+            rows, source="hf", dataset_id="ds", mapping=FieldMapping(audio=("audio",)), audio_dir=audio_dir
         )
 
         assert skipped == 0
         written = Path(records[0]["audio_path"])
         assert written.exists() and written.parent == audio_dir.resolve()
-        assert records[0]["raw_transcription"] == "hola"
-        assert records[0]["sample_rate"] == 16_000
-        assert records[0]["duration_s"] == 0.5
-
-    def test_materialises_audio_bytes_to_wav(self, tmp_path):
-        buf = io.BytesIO()
-        sf.write(buf, np.zeros(4_000, dtype="float32"), 8_000, format="WAV")
-        rows = [{"audio": {"bytes": buf.getvalue(), "path": None}, "sentence": "bonjour"}]
-
-        records, skipped = m.records_from_rows(
-            rows, source="hf", dataset_id="ds", mapping=FieldMapping(audio=("audio",)), audio_dir=tmp_path
-        )
-
-        assert skipped == 0
-        assert Path(records[0]["audio_path"]).exists()
+        assert records[0]["raw_transcription"] == "bonjour"
         assert records[0]["sample_rate"] == 8_000
+        assert records[0]["duration_s"] == 0.5
 
 
 # ---------------------------------------------------------------------------

@@ -1,17 +1,8 @@
 """Shared core for turning source rows into a Listenr manifest.
 
-Every importer normalises its dataset into an iterable of plain ``dict`` rows
-and hands them here. This module owns the parts that are identical across
-sources: picking columns via a :class:`~listenr.importers.mapping.FieldMapping`,
-resolving/materialising audio to a WAV on disk, deriving duration and sample
-rate, and writing ``manifest.jsonl``.
-
-Audio in a row may be either
-  * a filesystem path string (Mozilla Data Collective extracts real files), or
-  * a Hugging Face ``Audio`` value: a dict with ``array`` + ``sampling_rate``,
-    or with ``bytes`` (when loaded with ``decode=False``), or with ``path``.
-When audio is not already a usable file, it is written to ``audio_dir`` as
-``<uuid>.wav`` so the rest of Listenr can load it with soundfile as usual.
+Importers normalise their dataset into an iterable of plain ``dict`` rows and
+hand them here: column picking via :class:`~listenr.importers.mapping.FieldMapping`,
+materialising audio to WAV where needed, and writing ``manifest.jsonl``.
 """
 
 from __future__ import annotations
@@ -19,7 +10,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import math
 import uuid
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -35,17 +25,14 @@ logger = logging.getLogger("listenr.importers")
 
 
 def default_manifest_path(source: str, dataset_id: str) -> Path:
-    """Default side-manifest location for an imported dataset."""
     return STORAGE_BASE / "imports" / source / _slug(dataset_id) / "manifest.jsonl"
 
 
 def default_audio_dir(source: str, dataset_id: str) -> Path:
-    """Directory where materialised clips for an imported dataset are written."""
     return STORAGE_BASE / "imports" / source / _slug(dataset_id) / "audio"
 
 
 def _slug(value: str) -> str:
-    """Filesystem-safe form of a dataset id (Common Voice ids contain '/')."""
     return value.strip().replace("/", "__").replace(" ", "_") or "dataset"
 
 
@@ -73,35 +60,15 @@ def _pick(row: Mapping[str, Any], candidates: tuple[str, ...]) -> Any:
     return None
 
 
-def _as_optional_float(value: Any) -> float | None:
-    if _is_missing(value):
-        return None
-    try:
-        result = float(value)
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(result):
-        return None
-    return result
-
-
-def _as_optional_int(value: Any) -> int | None:
-    num = _as_optional_float(value)
-    return None if num is None else int(num)
-
-
 def _resolve_audio(
     value: Any,
     dest: Path,
 ) -> tuple[Path, float | None, int | None] | None:
-    """Resolve a row's audio value to a WAV path on disk.
-
-    Returns ``(path, duration_s, sample_rate)`` where duration/sample_rate are
-    filled in when we had to decode the audio (and are therefore already known),
-    or ``None`` when they still need to be read from the file. Returns ``None``
-    for the whole tuple if the audio could not be resolved.
+    """Resolve a row's audio value — a filesystem path, or a Hugging Face
+    ``Audio`` dict with ``bytes``/``path`` — to ``(wav_path, duration_s,
+    sample_rate)``. Duration/sample rate are ``None`` unless already known
+    from decoding; ``None`` overall if the audio can't be resolved.
     """
-    # Case 1: a filesystem path (MDC and any file-based source).
     if isinstance(value, (str, Path)):
         text = str(value).strip()
         if not text:
@@ -111,16 +78,7 @@ def _resolve_audio(
             return None
         return path.resolve(), None, None
 
-    # Case 2: a Hugging Face Audio value.
     if isinstance(value, Mapping):
-        array = value.get("array")
-        sampling_rate = _as_optional_int(value.get("sampling_rate"))
-        if array is not None and sampling_rate:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            sf.write(str(dest), array, sampling_rate)
-            duration = len(array) / float(sampling_rate)
-            return dest.resolve(), duration, sampling_rate
-
         raw_bytes = value.get("bytes")
         if raw_bytes:
             data, sr = sf.read(io.BytesIO(raw_bytes))
@@ -185,18 +143,9 @@ def records_from_rows(
             continue
         audio_path, duration_s, sample_rate = resolved
 
-        if duration_s is None:
-            duration_s = _as_optional_float(_pick(row, mapping.duration_s))
-        if duration_s is None:
-            duration_ms = _as_optional_float(_pick(row, mapping.duration_ms))
-            duration_s = None if duration_ms is None else duration_ms / 1000.0
-        if sample_rate is None:
-            sample_rate = _as_optional_int(_pick(row, mapping.sample_rate))
-
         if duration_s is None or sample_rate is None:
             info = sf.info(str(audio_path))
-            duration_s = duration_s if duration_s is not None else float(info.duration)
-            sample_rate = sample_rate if sample_rate is not None else int(info.samplerate)
+            duration_s, sample_rate = float(info.duration), int(info.samplerate)
 
         record = {
             "uuid": row_uuid,
@@ -208,7 +157,7 @@ def records_from_rows(
             "sample_rate": sample_rate,
             "whisper_model": "",
             "llm_model": "",
-            "timestamp": _as_text(_pick(row, mapping.timestamp)),
+            "timestamp": _as_text(row.get("timestamp")),
             "source": source,
             "source_dataset_id": dataset_id,
         }

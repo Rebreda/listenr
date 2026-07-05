@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Import Mozilla Data Collective ASR datasets into a Listenr manifest.
 
-The ``datacollective`` SDK applies each dataset's schema internally and hands
-back a pandas DataFrame with normalised (logical) column names — typically
-``audio_path`` and ``transcription`` for ASR. We convert those rows onto the
-shared manifest core; unusual column names can be handled per dataset with
-``--audio-column`` / ``--text-column`` without code changes.
+The ``datacollective`` SDK returns a pandas DataFrame with normalised column
+names (``audio_path`` / ``transcription`` for ASR); unusual layouts can be
+mapped with ``--audio-column`` / ``--text-column``.
 """
 
 from __future__ import annotations
@@ -25,7 +23,7 @@ from listenr.importers.mapping import FieldMapping
 logger = logging.getLogger("listenr.importers.mdc")
 
 SOURCE = "mdc"
-MDC_MAPPING = FieldMapping()  # defaults (audio_path / transcription) fit MDC ASR
+MDC_MAPPING = FieldMapping()
 
 
 def load_rows(dataset_id: str, enable_logging: bool = False) -> tuple[list[dict], str]:
