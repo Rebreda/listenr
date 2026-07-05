@@ -13,6 +13,12 @@ and can be set three ways. Precedence, highest first:
 No config file is required — every setting has a sensible default. Invalid
 values (wrong type, unknown enum) fail loudly at startup with a clear error.
 
+To start from a fully commented template:
+
+```bash
+mkdir -p ~/.config/listenr && cp examples/config.toml ~/.config/listenr/
+```
+
 ---
 
 ## Full reference (`config.toml`)

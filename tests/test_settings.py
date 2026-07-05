@@ -4,6 +4,8 @@ Covers: defaults, TOML file loading (via LISTENR_CONFIG), environment-variable
 overrides, precedence, validation errors, and smoke-imports of the consumers.
 """
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -98,6 +100,34 @@ class TestValidation:
     def test_input_device_default_maps_to_none(self, isolated_env):
         isolated_env.write_text('[audio]\ninput_device = "default"\n')
         assert Settings().audio.input_device is None
+
+
+class TestExampleConfig:
+    """examples/config.toml must stay in lockstep with the code defaults."""
+
+    EXAMPLE = Path(__file__).parent.parent / "examples" / "config.toml"
+
+    def test_example_equals_defaults(self, isolated_env, monkeypatch):
+        defaults = Settings()
+        monkeypatch.setenv("LISTENR_CONFIG", str(self.EXAMPLE))
+        assert Settings() == defaults
+
+    def test_example_covers_every_setting(self):
+        import tomllib
+
+        with open(self.EXAMPLE, "rb") as f:
+            data = tomllib.load(f)
+
+        for section, field in Settings.model_fields.items():
+            if section == "corrections":
+                continue  # free-form table, covered by the equality test
+            assert section in data, f"section [{section}] missing from example"
+            model_keys = set(field.default.__class__.model_fields)
+            file_keys = set(data[section])
+            assert file_keys == model_keys, (
+                f"[{section}] drift — missing {model_keys - file_keys}, "
+                f"stale {file_keys - model_keys}"
+            )
 
 
 class TestConsumersImport:
