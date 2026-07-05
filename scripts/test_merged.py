@@ -88,6 +88,26 @@ def make_asr(model_id_or_path: str | Path):
 GENERATE_KWARGS = {"language": "english", "task": "transcribe"}
 
 
+def compute_wer(refs: list[str], hyps: list[str]) -> float | None:
+    """Corpus WER (%) with Whisper's official English text normalization.
+
+    Returns None when there are no usable reference/hypothesis pairs or when
+    the optional scoring dependencies are missing.
+    """
+    try:
+        import jiwer
+        from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
+    except ImportError:
+        return None
+
+    normalize = EnglishTextNormalizer({})
+    pairs = [(normalize(r), normalize(h)) for r, h in zip(refs, hyps)]
+    pairs = [(r, h) for r, h in pairs if r]
+    if not pairs:
+        return None
+    return 100 * jiwer.wer([r for r, _ in pairs], [h for _, h in pairs])
+
+
 def load_manifest_entries(
     manifest_path: Path,
     n: int,
@@ -341,6 +361,9 @@ def main():
         for model in (("base", "merged") if base_asr else ("merged",))
     }
 
+    refs: list[str] = []
+    hyps: dict[str, list[str]] = {"merged": [], "base": []}
+
     for i, rec in enumerate(entries, 1):
         audio_path = Path(rec["audio_path"])
         print(f"  [{i}/{total}] {audio_path.name} ...", end="", flush=True)
@@ -355,9 +378,25 @@ def main():
                 tally[model][kw][1] += 1
                 if hit:
                     tally[model][kw][0] += 1
+        refs.append(rec.get("corrected_transcription") or "")
+        hyps["merged"].append(merged_text)
+        if base_text is not None:
+            hyps["base"].append(base_text)
 
     print(f"\n{'─' * 90}")
     print(f"  Done — {total} clips transcribed with {args.model.name}")
+
+    wer_rows = [
+        (name, compute_wer(refs, texts))
+        for name, texts in (("base", hyps["base"]), ("fine-tuned", hyps["merged"]))
+        if texts
+    ]
+    wer_rows = [(name, wer) for name, wer in wer_rows if wer is not None]
+    if wer_rows:
+        print(f"\n  WER vs ground truth (Whisper English normalization)")
+        for name, wer in wer_rows:
+            print(f"    {name:<12}  {wer:.1f}%")
+
     if keywords:
         for model, kw_tally in tally.items():
             print(f"\n  Keyword recall — {model}")
