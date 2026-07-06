@@ -23,7 +23,7 @@ scripts/setup-env.sh                              # 2. write .env from $HOME
 podman compose run --rm build-dataset             # 3. build train/dev/test splits
 podman compose run --rm finetune                  # 4. fine-tune (bf16, 2000 steps)
 podman compose run --rm merge                     # 5. merge adapter → standalone model
-uv run python scripts/test_merged.py              # 6. compare base vs fine-tuned
+uv run listenr eval --compare-base --model ~/listenr_merged   # 6. base vs fine-tuned
 ```
 
 That's it. The rest of this doc explains what each step does and how to
@@ -175,47 +175,53 @@ Output (~926 MB for whisper-small):
 
 ---
 
-## 6. Test inference
+## 6. Evaluate
 
 ```bash
 # Compare original vs fine-tuned on a single file
-uv run python scripts/test_merged.py --audio path/to/clip.wav
+uv run listenr eval --audio path/to/clip.wav
 
-# Run against the 20 most recent manifest clips (default)
-uv run python scripts/test_merged.py
+# Evaluate the held-out test split, base model side-by-side, with WER
+# (--model: the container merge flow writes to ~/listenr_merged, see .env)
+uv run listenr eval --compare-base --model ~/listenr_merged
 
 # Recall check: did the fine-tune learn your domain words?
-uv run python scripts/test_merged.py --keyword Claude --keyword Cursor --n 50
+uv run listenr eval --compare-base --keyword Claude --keyword Cursor --n 50
 ```
 
-Both `--audio` and manifest modes print side-by-side: the base
-(`openai/whisper-small` by default) on the left, the fine-tuned merged
-model on the right.
+`listenr eval` runs the merged model over the **test split** of the dataset
+written by `listenr build-dataset --format hf` — clips the fine-tune never saw —
+and reports corpus WER against the ground-truth transcriptions. With
+`--compare-base`, the base model transcribes the same clips so you can see
+exactly what fine-tuning changed:
 
-Example single-file output:
 ```
-  ORIGINAL (base)                           FINE-TUNED (merged)
-  ──────────────────────────────────────    ──────────────────────────────────────
+  BASE                                      FINE-TUNED (merged)
   So what's good, my guy?                   So what's good, my guy?
+
+  WER vs ground truth (Whisper English normalization)
+    base          21.3%
+    fine-tuned    14.5%
 ```
 
-With `--keyword`, you also get a recall summary across all matching clips:
+With `--keyword`, you also get a per-model recall summary across all matching clips:
 ```
-  Keyword recall
+  Keyword recall — fine-tuned
     Claude                4/5  (80%)  ████░
     Cursor                3/3  (100%) ███
 ```
 
-### Test options
+### Eval options
 
 | Flag | Default | Description |
 |---|---|---|
-| `--model PATH` | `~/listenr_merged` | Merged model directory |
-| `--audio PATH` |  - | Transcribe a single file (vs the manifest) |
+| `--model DIR` | `~/listenr_finetune_merged` | Merged model directory |
+| `--dataset DIR` | `~/listenr_dataset/hf_dataset` | Dataset from `listenr build-dataset --format hf` |
+| `--split NAME` | `test` | Dataset split to evaluate |
+| `--n N` | `50` | Maximum number of clips |
+| `--compare-base` | off | Also run the base model on every clip |
 | `--base-model ID` | (auto from merged config) | Base model for comparison |
-| `--manifest PATH` | `~/.listenr/audio_clips/manifest.jsonl` | Manifest file |
-| `--n N` | `20` | Number of clips to test |
-| `--min-duration S` | `0.5` | Skip clips shorter than this |
+| `--audio PATH` |  - | Compare base vs fine-tuned on a single file instead |
 | `--keyword WORD` |  - | Filter to clips with WORD in ground truth; repeatable |
 
 ### Using the merged model directly
@@ -329,5 +335,5 @@ uv pip install -e ".[finetune]"
 uv run listenr build-dataset --format hf
 uv run listenr finetune --bf16
 uv run listenr merge
-uv run python scripts/test_merged.py
+uv run listenr eval --compare-base
 ```

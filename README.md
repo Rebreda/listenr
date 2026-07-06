@@ -71,8 +71,8 @@ podman compose run --rm finetune
 # Merge the LoRA adapter into a standalone model
 podman compose run --rm merge
 
-# Test it against your clips
-python scripts/test_merged.py --keyword YourDomainWord
+# Evaluate it on the held-out test split
+uv run listenr eval --compare-base --keyword YourDomainWord
 ```
 
 See [docs/setup.md](docs/setup.md) for full installation details.

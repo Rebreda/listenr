@@ -21,6 +21,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "import-hf": ("listenr.importers.hf", "Import a Hugging Face ASR dataset"),
     "finetune": ("listenr.finetune.train", "Fine-tune Whisper with LoRA on your dataset"),
     "merge": ("listenr.finetune.merge", "Merge a LoRA adapter into a standalone model"),
+    "eval": ("listenr.finetune.evaluate", "Evaluate the merged model on the held-out test split"),
 }
 
 
