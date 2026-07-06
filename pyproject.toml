@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "listenr"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Real-time microphone transcription via Lemonade ASR"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -45,6 +49,10 @@ listenr = "listenr.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools_scm]
+# Version comes from git tags (v0.2.0 -> 0.2.0); untagged builds get a .devN version.
+fallback_version = "0.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
