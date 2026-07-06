@@ -128,7 +128,7 @@ grep LISTENR .env
 Reduce memory usage:
 
 ```bash
-listenr-finetune --batch-size 2 --grad-accum 8 --bf16
+listenr finetune --batch-size 2 --grad-accum 8 --bf16
 ```
 
 The effective batch size is `batch_size × grad_accum`. Keeping that product the

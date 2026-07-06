@@ -9,25 +9,25 @@ rewrites the manifest with updated ``raw_transcription`` (and optionally
 Usage examples::
 
     # Re-transcribe every clip (uses the configured default Whisper model)
-    listenr-retranscribe
+    listenr retranscribe
 
     # Use a different model
-    listenr-retranscribe --model Whisper-Large-v3-Turbo
+    listenr retranscribe --model Whisper-Large-v3-Turbo
 
     # Only clips whose current raw transcript matches a regex
-    listenr-retranscribe --match "hello world"
+    listenr retranscribe --match "hello world"
 
     # Only specific UUIDs
-    listenr-retranscribe --uuid abc123 def456
+    listenr retranscribe --uuid abc123 def456
 
     # Re-transcribe AND re-run LLM correction
-    listenr-retranscribe --llm
+    listenr retranscribe --llm
 
     # Preview what would change without modifying the manifest
-    listenr-retranscribe --dry-run
+    listenr retranscribe --dry-run
 
     # Custom manifest location
-    listenr-retranscribe --manifest /data/recordings/manifest.jsonl
+    listenr retranscribe --manifest /data/recordings/manifest.jsonl
 """
 
 from __future__ import annotations
@@ -268,7 +268,6 @@ def retranscribe(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="listenr-retranscribe",
         description="Re-run Whisper (and optionally LLM) on saved audio clips.",
     )
     parser.add_argument(

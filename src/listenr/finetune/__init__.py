@@ -10,5 +10,5 @@ package can be imported without the optional fine-tuning dependencies installed)
 
 Entry point::
 
-    listenr-finetune [options]
+    listenr finetune [options]
 """

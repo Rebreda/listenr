@@ -2,29 +2,29 @@
 """
 train.py — CLI entry point for Whisper LoRA fine-tuning.
 
-Loads a HuggingFace DatasetDict produced by ``listenr-build-dataset --format hf``,
+Loads a HuggingFace DatasetDict produced by ``listenr build-dataset --format hf``,
 prepares features, wraps the base Whisper model with LoRA adapters, and runs
 ``Seq2SeqTrainer``.  Only the adapter weights are saved, the base model is not
 copied.
 
 Usage:
-    listenr-finetune [options]
+    listenr finetune [options]
 
 Examples:
     # Fine-tune on your listenr dataset with all defaults from config
-    listenr-finetune
+    listenr finetune
 
     # Custom dataset location and output dir
-    listenr-finetune --dataset ~/listenr_dataset/hf_dataset --output ~/my_adapter
+    listenr finetune --dataset ~/listenr_dataset/hf_dataset --output ~/my_adapter
 
     # Quick smoke-test: load data + model, print stats, then exit
-    listenr-finetune --dry-run
+    listenr finetune --dry-run
 
     # Override training budget
-    listenr-finetune --max-steps 500 --eval-steps 100 --save-steps 200
+    listenr finetune --max-steps 500 --eval-steps 100 --save-steps 200
 
     # AMD ROCm GPU: use bf16 instead of fp16
-    listenr-finetune --bf16
+    listenr finetune --bf16
 """
 
 import argparse
@@ -43,7 +43,7 @@ def _resolve_dataset_path(dataset_arg: Path | None, dataset_output: Path) -> Pat
 
     If *dataset_arg* is given explicitly, use it.  Otherwise fall back to
     ``<Dataset.output_path>/hf_dataset`` (the default location written by
-    ``listenr-build-dataset --format hf``).
+    ``listenr build-dataset --format hf``).
     """
     if dataset_arg is not None:
         return Path(dataset_arg).expanduser()
@@ -62,7 +62,7 @@ def main() -> None:
         default=None,
         metavar="DIR",
         help=(
-            "Path to the hf_dataset directory written by listenr-build-dataset "
+            "Path to the hf_dataset directory written by listenr build-dataset "
             f"(default: {settings.dataset.output_path / 'hf_dataset'})"
         ),
     )
@@ -180,7 +180,7 @@ def main() -> None:
     if not dataset_path.exists():
         logger.error(
             f"Dataset not found at {dataset_path}.\n"
-            "Run:  listenr-build-dataset --format hf"
+            "Run:  listenr build-dataset --format hf"
         )
         sys.exit(1)
 

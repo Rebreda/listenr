@@ -41,15 +41,7 @@ finetune = [
 ]
 
 [project.scripts]
-listenr = "listenr.cli:main"
-listenr-asr = "listenr.unified_asr:main"
-listenr-build-dataset = "listenr.build_dataset:main"
-listenr-import-mdc = "listenr.importers.mdc:main"
-listenr-import-hf = "listenr.importers.hf:main"
-listenr-categorize = "listenr.categorize:main"
-listenr-finetune = "listenr.finetune.train:main"
-listenr-merge = "listenr.finetune.merge:main"
-listenr-retranscribe = "listenr.retranscribe:main"
+listenr = "listenr.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

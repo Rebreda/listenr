@@ -6,20 +6,20 @@ Reads manifest.jsonl saved by the CLI, filters/validates entries, and writes
 CSV (and optionally HuggingFace datasets) split files.
 
 Usage:
-    listenr-build-dataset [options]
+    listenr build-dataset [options]
 
 Examples:
     # Default: 80/10/10 split, CSV output in ~/listenr_dataset/
-    listenr-build-dataset
+    listenr build-dataset
 
     # Custom output directory and split ratio
-    listenr-build-dataset --output ~/my_dataset --split 90/5/5
+    listenr build-dataset --output ~/my_dataset --split 90/5/5
 
     # Only include clips longer than 1 second, HuggingFace format
-    listenr-build-dataset --min-duration 1.0 --format hf
+    listenr build-dataset --min-duration 1.0 --format hf
 
     # Preview without writing files
-    listenr-build-dataset --dry-run
+    listenr build-dataset --dry-run
 """
 
 import argparse

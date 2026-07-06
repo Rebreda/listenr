@@ -7,7 +7,7 @@ Everything stays on your machine.
 > PyTorch installed. The container is just the easiest way to get a
 > working GPU environment.
 
-> Real-time microphone capture (`listenr`) does **not** work inside the
+> Real-time microphone capture (`listenr record`) does **not** work inside the
 > container. Record on the host first, then fine-tune here.
 
 ---
@@ -36,7 +36,7 @@ customize it.
 - AMD GPU with ROCm drivers installed on the host (`rocm-smi` works)
 - Podman (`podman --version`)  - Docker works too with the same flags
 - ~50 GB free disk space (image + model cache + audio data + checkpoints)
-- Recordings collected on the host via `listenr` ([recording.md](recording.md))
+- Recordings collected on the host via `listenr record` ([recording.md](recording.md))
 
 ---
 
@@ -309,13 +309,13 @@ podman run --rm -it \
     -v ~/.cache/huggingface:/home/ubuntu/.cache/huggingface \
     -w /app \
     listenr-rocm \
-    listenr-finetune \
+    listenr finetune \
         --dataset /data/dataset/hf_dataset \
         --output /data/adapter \
         --bf16
 ```
 
-The `listenr-finetune` line **must** include `--dataset/--output/--bf16`
+The `listenr finetune` line **must** include `--dataset/--output/--bf16`
  - these are not defaults in the CLI, only in the compose service.
 
 ---
@@ -326,8 +326,8 @@ If you have ROCm PyTorch already installed:
 
 ```bash
 uv pip install -e ".[finetune]"
-uv run listenr-build-dataset --format hf
-uv run listenr-finetune --bf16
-uv run listenr-merge
+uv run listenr build-dataset --format hf
+uv run listenr finetune --bf16
+uv run listenr merge
 uv run python scripts/test_merged.py
 ```

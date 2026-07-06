@@ -101,7 +101,7 @@ between section and key). Examples:
 
 ```bash
 # One-off training override, no file edits:
-LISTENR_FINETUNE__BASE_MODEL=openai/whisper-tiny listenr-finetune
+LISTENR_FINETUNE__BASE_MODEL=openai/whisper-tiny listenr finetune
 
 # Container-friendly (no config mount needed):
 podman compose run --rm -e LISTENR_FINETUNE__MAX_STEPS=500 finetune

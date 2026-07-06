@@ -5,7 +5,7 @@ Uses sentence-embedding similarity: every transcription is embedded once and
 scored (cosine) against one or more topic phrases you supply — e.g.
 ``--topic "technology" --topic "artificial intelligence"``. Each record's score
 is the best match across your topics. Records at or above ``--threshold`` are
-written to a new manifest that plugs straight into ``listenr-build-dataset``.
+written to a new manifest that plugs straight into ``listenr build-dataset``.
 
 This is source-agnostic: it works on any manifest (your own recordings, an MDC
 import, an HF import, or a combination). It never modifies the input manifest.

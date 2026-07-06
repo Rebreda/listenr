@@ -1,6 +1,6 @@
 # Recording
 
-`listenr` streams your microphone to Lemonade in real time, receives Whisper
+`listenr record` streams your microphone to Lemonade in real time, receives Whisper
 transcriptions, optionally corrects them with a local LLM, and saves each
 utterance as a `.wav` clip.
 
@@ -10,16 +10,16 @@ utterance as a `.wav` clip.
 
 ```bash
 # Record and save everything (default)
-uv run listenr
+uv run listenr record
 
 # Print transcriptions only — nothing saved to disk
-uv run listenr --no-save
+uv run listenr record --no-save
 
 # Also print the raw Whisper output before LLM correction
-uv run listenr --show-raw
+uv run listenr record --show-raw
 
 # Verbose debug output (WebSocket messages, mic RMS, etc.)
-uv run listenr --debug
+uv run listenr record --debug
 ```
 
 Press **Ctrl+C** to stop. Listenr will unload all models from Lemonade before exiting.
