@@ -2,24 +2,24 @@
 """
 merge.py — Merge a LoRA adapter into the base Whisper model.
 
-After fine-tuning with ``listenr-finetune``, the output directory contains
+After fine-tuning with ``listenr finetune``, the output directory contains
 only the compact LoRA adapter weights.  This script folds those weights
 permanently into the base model and saves a self-contained
 ``WhisperForConditionalGeneration`` that can be loaded anywhere without PEFT
 installed.
 
 Usage:
-    listenr-merge [options]
+    listenr merge [options]
 
 Examples:
     # Merge adapter from default location (~/listenr_finetune) into ~/listenr_merged
-    listenr-merge
+    listenr merge
 
     # Custom paths
-    listenr-merge --adapter ~/my_adapter --output ~/my_merged_model
+    listenr merge --adapter ~/my_adapter --output ~/my_merged_model
 
     # Preview: show what would happen without writing files
-    listenr-merge --dry-run
+    listenr merge --dry-run
 """
 
 import argparse
@@ -28,14 +28,14 @@ import logging
 import sys
 from pathlib import Path
 
-from listenr.constants import FINETUNE_OUTPUT_DIR
+from listenr.settings import settings
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("listenr.finetune.merge")
 
 # Default merged-model output sits beside the adapter directory.
-DEFAULT_ADAPTER_DIR = FINETUNE_OUTPUT_DIR
-DEFAULT_OUTPUT_DIR = FINETUNE_OUTPUT_DIR.parent / (FINETUNE_OUTPUT_DIR.name + "_merged")
+DEFAULT_ADAPTER_DIR = settings.finetune.output_dir
+DEFAULT_OUTPUT_DIR = DEFAULT_ADAPTER_DIR.parent / (DEFAULT_ADAPTER_DIR.name + "_merged")
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ def read_base_model_id(adapter_dir: Path) -> str:
     if not config_path.exists():
         raise FileNotFoundError(
             f"adapter_config.json not found in {adapter_dir}. "
-            "Make sure --adapter points to the directory produced by listenr-finetune."
+            "Make sure --adapter points to the directory produced by listenr finetune."
         )
     with open(config_path, encoding="utf-8") as f:
         data = json.load(f)
@@ -79,7 +79,7 @@ def merge_adapter(adapter_dir: Path, output_dir: Path, dry_run: bool = False) ->
     Parameters
     ----------
     adapter_dir:
-        Path to the directory produced by ``listenr-finetune`` (contains
+        Path to the directory produced by ``listenr finetune`` (contains
         ``adapter_model.safetensors`` and ``adapter_config.json``).
     output_dir:
         Destination for the merged model.  Created if absent.
@@ -182,7 +182,7 @@ def main() -> None:
         type=Path,
         default=DEFAULT_ADAPTER_DIR,
         help=(
-            f"Path to the adapter directory produced by listenr-finetune "
+            f"Path to the adapter directory produced by listenr finetune "
             f"(default: {DEFAULT_ADAPTER_DIR})"
         ),
     )

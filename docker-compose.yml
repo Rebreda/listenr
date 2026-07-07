@@ -67,7 +67,7 @@ services:
       - "${LISTENR_DATA}:${LISTENR_DATA}:z,ro"
       # Adapter checkpoint output
       - "${LISTENR_FINETUNE}:/data/adapter:z"
-      # Listenr config (read by listenr-finetune)
+      # Listenr config (read by listenr finetune)
       - "${LISTENR_CONFIG}:/home/ubuntu/.config/listenr:z"
       # HuggingFace model cache — avoids re-downloading on every run.
       # Mounted under /home/ubuntu (not /root) because userns_mode=keep-id
@@ -80,7 +80,8 @@ services:
     # extra flags (e.g. `run --rm finetune --max-steps 500`) without losing
     # the dataset/output/bf16 settings.
     entrypoint:
-      - "listenr-finetune"
+      - "listenr"
+      - "finetune"
       - "--dataset=/data/dataset/hf_dataset"
       - "--output=/data/adapter"
       - "--bf16"
@@ -98,7 +99,8 @@ services:
     # Defaults in entrypoint so `run SERVICE EXTRA_ARGS` can append flags
     # without wiping out the manifest/output paths. See note on finetune service.
     entrypoint:
-      - "listenr-build-dataset"
+      - "listenr"
+      - "build-dataset"
       - "--manifest=/data/listenr/audio_clips/manifest.jsonl"
       - "--output=/data/dataset"
       - "--format=hf"
@@ -126,7 +128,8 @@ services:
     working_dir: /app
     # Defaults in entrypoint so `run SERVICE EXTRA_ARGS` can append flags.
     entrypoint:
-      - "listenr-merge"
+      - "listenr"
+      - "merge"
       - "--adapter=/data/adapter"
       - "--output=/data/merged"
     command: []

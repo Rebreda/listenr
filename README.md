@@ -57,13 +57,13 @@ lemonade pull gpt-oss-20b-mxfp4-GGUF
 git clone https://github.com/Rebreda/listenr
 cd listenr
 uv pip install -e .
-uv run listenr          # start recording
+uv run listenr record   # start recording
 ```
 
 **Once you have recordings, process & fine-tune:**
 ```bash
 # Build train/dev/test splits from your manifest
-uv run listenr-build-dataset --format hf
+uv run listenr build-dataset --format hf
 
 # Fine-tune Whisper (see docs/finetune-amd.md for AMD GPUs)
 podman compose run --rm finetune
@@ -71,16 +71,16 @@ podman compose run --rm finetune
 # Merge the LoRA adapter into a standalone model
 podman compose run --rm merge
 
-# Test it against your clips
-python scripts/test_merged.py --keyword YourDomainWord
+# Evaluate it on the held-out test split
+uv run listenr eval --compare-base --keyword YourDomainWord
 ```
 
 See [docs/setup.md](docs/setup.md) for full installation details.
 
 If you want to mix in an external ASR dataset, use the optional importers to
-write a separate Listenr-compatible manifest — `listenr-import-mdc <dataset-id>`
-(Mozilla Data Collective) or `listenr-import-hf <dataset-id>` (Hugging Face) —
-then pass that manifest to `listenr-build-dataset` alongside your normal one.
+write a separate Listenr-compatible manifest — `listenr import-mdc <dataset-id>`
+(Mozilla Data Collective) or `listenr import-hf <dataset-id>` (Hugging Face) —
+then pass that manifest to `listenr build-dataset` alongside your normal one.
 See [docs/dataset.md](docs/dataset.md) for details.
 
 ## Under the hood
@@ -91,14 +91,14 @@ See [docs/dataset.md](docs/dataset.md) for details.
 
 **Dataset & fine-tuning** - Listenr saves each utterance as a `.wav` clip and a line in `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace format. Another command fine-tunes any `openai/whisper-*` model using LoRA (works on AMD and NVIDIA GPUs via Podman).
 
-**Deployment** - `listenr-merge` folds the LoRA adapter into a self-contained model that loads with plain `transformers`. No PEFT dependency. Run inference locally or deploy it anywhere.
+**Deployment** - `listenr merge` folds the LoRA adapter into a self-contained model that loads with plain `transformers`. No PEFT dependency. Run inference locally or deploy it anywhere.
 
 ## Documentation
 
 | Guide | Description |
 |---|---|
 | [docs/setup.md](docs/setup.md) | Installation, Lemonade Server, microphone setup |
-| [docs/configuration.md](docs/configuration.md) | Full `config.ini` reference, VAD tuning, available models |
+| [docs/configuration.md](docs/configuration.md) | Full `config.toml` reference, VAD tuning, available models |
 | [docs/recording.md](docs/recording.md) | CLI usage, how recording works, batch transcription |
 | [docs/dataset.md](docs/dataset.md) | Building train/dev/test splits, CSV and HF formats, and the optional Mozilla Data Collective import |
 | [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |

@@ -8,8 +8,8 @@
 # Run:   see docs/finetune-amd.md
 #
 # NOTE: sounddevice (microphone capture) will not work inside this container.
-#       This image is intended for fine-tuning only (listenr-finetune /
-#       listenr-build-dataset), not real-time audio capture.
+#       This image is intended for fine-tuning only (listenr finetune /
+#       listenr build-dataset), not real-time audio capture.
 #
 # NOTE: listenr requires Python >=3.13 for local installs; this image uses
 #       Python 3.12 (the AMD-tested version). --ignore-requires-python is safe
@@ -72,4 +72,4 @@ ENV HIP_VISIBLE_DEVICES="0" \
     MIOPEN_USER_DB_PATH="/tmp/miopen" \
     MIOPEN_CUSTOM_CACHE_DIR="/tmp/miopen"
 
-CMD ["listenr-finetune", "--help"]
+CMD ["listenr", "finetune", "--help"]

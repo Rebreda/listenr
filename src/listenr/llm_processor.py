@@ -6,15 +6,7 @@ Simplified LLM Processor leveraging Lemonade Server APIs.
 import json
 import re
 import requests
-import listenr.config_manager as cfg
-from listenr.constants import (
-    LLM_API_BASE as _DEFAULT_API_BASE,
-    LLM_MAX_TOKENS,
-    LLM_MODEL,
-    LLM_TEMPERATURE,
-    LLM_TIMEOUT,
-    WHISPER_MODEL,
-)
+from listenr.settings import settings
 
 # Base system prompt for transcription post-processing.
 # The model must return ONLY a JSON object — no prose, no markdown fences.
@@ -68,7 +60,7 @@ Return ONLY the raw JSON object. No markdown, no explanation, no extra text.\
 
 def _build_system_prompt() -> str:
     """Build the system prompt, appending any configured keyword corrections."""
-    corrections = cfg.get_corrections()
+    corrections = settings.corrections
     prompt = _CORRECTION_SYSTEM_PROMPT_BASE
     if corrections:
         lines = "\n".join(f'  "{k}" -> "{v}"' for k, v in corrections.items())
@@ -119,7 +111,7 @@ def _parse_llm_correction(raw_response: str, original_text: str) -> dict:
 
 def _api_base() -> str:
     """Return the OpenAI-compatible API base URL (e.g. /api/v1 for chat/completions)."""
-    return cfg.get_setting('LLM', 'api_base', _DEFAULT_API_BASE) or _DEFAULT_API_BASE
+    return settings.llm.api_base
 
 
 def _lemon_base() -> str:
@@ -186,11 +178,11 @@ def lemonade_llm_correct(
     Never raises — on failure returns the original text with is_improved=False.
     """
     if model is None:
-        model = LLM_MODEL
+        model = settings.llm.model
 
-    temperature = LLM_TEMPERATURE
-    max_tokens = LLM_MAX_TOKENS
-    timeout = LLM_TIMEOUT
+    temperature = settings.llm.temperature
+    max_tokens = settings.llm.max_tokens
+    timeout = settings.llm.timeout
 
     # Build user message content, prepending previous corrected transcripts as context
     context_pairs = list(recent_context or [])
@@ -240,7 +232,7 @@ def lemonade_transcribe_audio(audio_path, model=None):
     Use Lemonade's HTTP transcription endpoint for audio files.
     """
     if model is None:
-        model = WHISPER_MODEL
+        model = settings.whisper.model
     with open(audio_path, "rb") as f:
         resp = requests.post(
             f"{_api_base()}/audio/transcriptions",

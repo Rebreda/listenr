@@ -9,25 +9,25 @@ rewrites the manifest with updated ``raw_transcription`` (and optionally
 Usage examples::
 
     # Re-transcribe every clip (uses the configured default Whisper model)
-    listenr-retranscribe
+    listenr retranscribe
 
     # Use a different model
-    listenr-retranscribe --model Whisper-Large-v3-Turbo
+    listenr retranscribe --model Whisper-Large-v3-Turbo
 
     # Only clips whose current raw transcript matches a regex
-    listenr-retranscribe --match "hello world"
+    listenr retranscribe --match "hello world"
 
     # Only specific UUIDs
-    listenr-retranscribe --uuid abc123 def456
+    listenr retranscribe --uuid abc123 def456
 
     # Re-transcribe AND re-run LLM correction
-    listenr-retranscribe --llm
+    listenr retranscribe --llm
 
     # Preview what would change without modifying the manifest
-    listenr-retranscribe --dry-run
+    listenr retranscribe --dry-run
 
     # Custom manifest location
-    listenr-retranscribe --manifest /data/recordings/manifest.jsonl
+    listenr retranscribe --manifest /data/recordings/manifest.jsonl
 """
 
 from __future__ import annotations
@@ -40,8 +40,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from listenr.constants import STORAGE_BASE, WHISPER_MODEL
 from listenr.llm_processor import lemonade_llm_correct, lemonade_transcribe_audio
+from listenr.settings import settings
 from listenr.transcript_utils import clean_transcript
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -53,7 +53,7 @@ logger = logging.getLogger("listenr.retranscribe")
 # ---------------------------------------------------------------------------
 
 def _default_manifest() -> Path:
-    return STORAGE_BASE / "manifest.jsonl"
+    return settings.storage.audio_clips_path / "manifest.jsonl"
 
 
 def _load_manifest(path: Path) -> list[dict]:
@@ -191,7 +191,7 @@ def retranscribe(
     Summary dict with keys ``total``, ``processed``, ``updated``, ``errors``,
     ``skipped``.
     """
-    effective_model = model or WHISPER_MODEL
+    effective_model = model or settings.whisper.model
     records = _load_manifest(manifest_path)
 
     total = len(records)
@@ -268,7 +268,6 @@ def retranscribe(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="listenr-retranscribe",
         description="Re-run Whisper (and optionally LLM) on saved audio clips.",
     )
     parser.add_argument(

@@ -1,0 +1,78 @@
+# Listenr configuration — copy to ~/.config/listenr/config.toml and edit.
+#
+#   mkdir -p ~/.config/listenr && cp examples/config.toml ~/.config/listenr/
+#
+# Every key is optional and the values below are the defaults, so a fresh copy
+# changes nothing until you edit it. Any key can also be set per-run as an
+# environment variable: LISTENR_<SECTION>__<KEY>, e.g. LISTENR_VAD__THRESHOLD=0.1.
+# See docs/configuration.md for details.
+
+[whisper]
+# Whisper model served by Lemonade: Whisper-Tiny, Whisper-Base, Whisper-Large-v3-Turbo
+model = "Whisper-Base"
+
+[audio]
+sample_rate = 48000     # mic capture rate; resampled to 16 kHz internally
+channels = 1
+blocksize = 4096        # frames per mic read (~85 ms)
+# Device name (partial match), index number, or "default" for system default.
+input_device = "pipewire"
+
+[vad]
+threshold = 0.05             # RMS energy; raise (0.08-0.15) to ignore noise
+silence_duration_ms = 800    # silence needed to end a segment
+prefix_padding_ms = 250      # minimum speech before transcription triggers
+max_segment_s = 12.0         # hard cap; Whisper hallucinates above ~20 s
+
+[llm]
+enabled = true
+model = "gpt-oss-20b-mxfp4-GGUF"
+api_base = "http://localhost:13305/api/v1"   # Lemonade Server (OpenAI-compatible)
+temperature = 0.3
+max_tokens = 1500
+timeout = 30
+context_window = 10     # preceding segments passed as LLM context
+
+[storage]
+audio_clips_path = "~/.listenr/audio_clips"
+
+[dataset]
+output_path = "~/listenr_dataset"
+split = "80/10/10"      # train/dev/test percentages
+min_duration = 0.3      # skip clips shorter than this (seconds)
+min_chars = 2           # skip transcripts shorter than this
+seed = 42               # split shuffling seed
+format = "csv"          # csv | hf | both
+strip_tags = true       # strip noise tags like (music)
+
+[finetune]
+base_model = "openai/whisper-small"
+language = "english"
+task = "transcribe"     # transcribe | translate
+lora_r = 8
+lora_alpha = 32
+lora_dropout = 0.1
+lora_target_modules = ["q_proj", "v_proj"]
+freeze_encoder = true
+learning_rate = 1e-4
+warmup_steps = 100
+max_steps = 2000
+batch_size = 8
+grad_accum_steps = 2
+fp16 = false            # CUDA mixed precision
+bf16 = false            # recommended on AMD ROCm (RDNA2+)
+output_dir = "~/listenr_finetune"
+eval_steps = 200
+save_steps = 400
+generation_max_length = 128
+
+# Keyword corrections passed to the LLM: misheard -> correct (case-insensitive).
+# NOTE: defining this table replaces the built-in list below entirely.
+[corrections]
+"clod" = "Claude Code"
+"clode" = "Claude Code"
+"cloud code" = "Claude Code"
+"clock code" = "Claude Code"
+"open ai" = "OpenAI"
+"unsurropic" = "Anthropic"
+"anthropic" = "Anthropic"

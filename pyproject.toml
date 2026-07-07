@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "listenr"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Real-time microphone transcription via Lemonade ASR"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,6 +16,7 @@ dependencies = [
     "numpy",
     "scipy",
     "pandas",
+    "pydantic-settings>=2.6",
 ]
 
 [project.optional-dependencies]
@@ -40,18 +45,14 @@ finetune = [
 ]
 
 [project.scripts]
-listenr = "listenr.cli:main"
-listenr-asr = "listenr.unified_asr:main"
-listenr-build-dataset = "listenr.build_dataset:main"
-listenr-import-mdc = "listenr.importers.mdc:main"
-listenr-import-hf = "listenr.importers.hf:main"
-listenr-categorize = "listenr.categorize:main"
-listenr-finetune = "listenr.finetune.train:main"
-listenr-merge = "listenr.finetune.merge:main"
-listenr-retranscribe = "listenr.retranscribe:main"
+listenr = "listenr.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools_scm]
+# Version comes from git tags (v0.2.0 -> 0.2.0); untagged builds get a .devN version.
+fallback_version = "0.0.0"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

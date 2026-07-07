@@ -88,7 +88,7 @@ def _resample(array: Any, orig_sr: int, target_sr: int) -> Any:
 def prepare_example(batch: dict, processor: Any) -> dict:
     """Convert a single dataset example into model-ready tensors.
 
-    Expects the dataset to have been created by ``listenr-build-dataset --format hf``
+    Expects the dataset to have been created by ``listenr build-dataset --format hf``
     (or ``both``).  ``audio_path`` may be either:
 
     * A plain file-path string — loaded on-the-fly with ``soundfile``.
@@ -145,7 +145,7 @@ def make_dataset(hf_dataset_path: Path, processor: Any) -> Any:
     """Load the on-disk HuggingFace DatasetDict and apply feature preparation.
 
     *hf_dataset_path* should be the ``hf_dataset/`` subdirectory written by
-    ``listenr-build-dataset --format hf``.
+    ``listenr build-dataset --format hf``.
 
     The returned DatasetDict has columns ``input_features`` and ``labels``
     ready for the Trainer.

@@ -1,87 +1,113 @@
 # Configuration
 
-Config is created with defaults at `~/.config/listenr/config.ini` on first run.
-Edit it directly — changes take effect on the next `listenr` invocation.
+All settings live in one typed settings object ([`listenr/settings.py`](../src/listenr/settings.py))
+and can be set three ways. Precedence, highest first:
+
+1. **CLI flags** — per-run overrides (see `--help` on each command)
+2. **Environment variables** — `LISTENR_<SECTION>__<KEY>`, e.g.
+   `LISTENR_FINETUNE__MAX_STEPS=500`. Also read from a `.env` file in the
+   working directory. Ideal for containers.
+3. **`~/.config/listenr/config.toml`** — persistent user defaults
+   (override the file location with `LISTENR_CONFIG=/path/to/config.toml`)
+
+No config file is required — every setting has a sensible default. Invalid
+values (wrong type, unknown enum) fail loudly at startup with a clear error.
+
+To start from a fully commented template:
+
+```bash
+mkdir -p ~/.config/listenr && cp examples/config.toml ~/.config/listenr/
+```
 
 ---
 
-## Full reference
+## Full reference (`config.toml`)
 
-```ini
-[Lemonade]
-api_base = http://localhost:13305/api/v1
+Every key is optional; the values shown are the defaults.
 
-[Whisper]
-model = Whisper-Tiny
+```toml
+[whisper]
+# Whisper model served by Lemonade: Whisper-Tiny, Whisper-Base, Whisper-Large-v3-Turbo
+model = "Whisper-Base"
 
-[Audio]
-sample_rate = 48000
+[audio]
+sample_rate = 48000     # mic capture rate; resampled to 16 kHz internally
 channels = 1
-blocksize = 4096
-# Device name (partial match) or index number. Leave blank for system default.
-input_device = pipewire
+blocksize = 4096        # frames per mic read (~85 ms)
+# Device name (partial match), index number, or "default" for system default.
+input_device = "pipewire"
 
-[VAD]
-threshold = 0.05
-silence_duration_ms = 800
+[vad]
+threshold = 0.05             # RMS energy; raise (0.08-0.15) to ignore noise
+silence_duration_ms = 800    # silence needed to end a segment
 prefix_padding_ms = 250
+max_segment_s = 12.0         # hard cap; Whisper hallucinates above ~20 s
 
-[LLM]
+[llm]
 enabled = true
-model = gpt-oss-20b-mxfp4-GGUF
-api_base = http://localhost:13305/api/v1
+model = "gpt-oss-20b-mxfp4-GGUF"
+api_base = "http://localhost:13305/api/v1"   # Lemonade Server (OpenAI-compatible)
 temperature = 0.3
 max_tokens = 1500
 timeout = 30
-context_window = 10
+context_window = 10     # preceding segments passed as LLM context
 
-[Storage]
-audio_clips_path = ~/.listenr/audio_clips
-audio_clips_enabled = true
-retention_days = 90
-max_storage_gb = 10.0
+[storage]
+audio_clips_path = "~/.listenr/audio_clips"
 
-[Dataset]
-output_path = ~/listenr_dataset
-split = 80/10/10
+[dataset]
+output_path = "~/listenr_dataset"
+split = "80/10/10"
 min_duration = 0.3
 min_chars = 2
 seed = 42
-format = csv
-strip_tags = true
+format = "csv"          # csv | hf | both
+strip_tags = true       # strip noise tags like (music)
 
-[Finetune]
-base_model = openai/whisper-small
-language = english
-task = transcribe
+[finetune]
+base_model = "openai/whisper-small"
+language = "english"
+task = "transcribe"     # transcribe | translate
 lora_r = 8
 lora_alpha = 32
 lora_dropout = 0.1
-lora_target_modules = q_proj,v_proj
+lora_target_modules = ["q_proj", "v_proj"]
 freeze_encoder = true
-learning_rate = 0.0001
+learning_rate = 1e-4
 warmup_steps = 100
 max_steps = 2000
 batch_size = 8
 grad_accum_steps = 2
-fp16 = false
-bf16 = false
-output_dir = ~/listenr_finetune
+fp16 = false            # CUDA mixed precision
+bf16 = false            # recommended on AMD ROCm (RDNA2+)
+output_dir = "~/listenr_finetune"
 eval_steps = 200
 save_steps = 400
 generation_max_length = 128
 
-[Output]
-# Optional: write all transcriptions to a file as well as stdout
-file =
-llm_file =
-line_format = [{timestamp}] {text}
-timestamp_format = %Y-%m-%d %H:%M:%S
-show_raw = false
+# Keyword corrections passed to the LLM: misheard -> correct (case-insensitive).
+# Defining this table replaces the built-in examples.
+[corrections]
+"clod" = "Claude Code"
+"open ai" = "OpenAI"
+```
 
-[Logging]
-level = INFO
-file =
+---
+
+## Environment variables
+
+Any key above can be set as `LISTENR_<SECTION>__<KEY>` (double underscore
+between section and key). Examples:
+
+```bash
+# One-off training override, no file edits:
+LISTENR_FINETUNE__BASE_MODEL=openai/whisper-tiny listenr finetune
+
+# Container-friendly (no config mount needed):
+podman compose run --rm -e LISTENR_FINETUNE__MAX_STEPS=500 finetune
+
+# List values are comma-separated:
+LISTENR_FINETUNE__LORA_TARGET_MODULES=q_proj,k_proj,v_proj
 ```
 
 ---
@@ -89,7 +115,7 @@ file =
 ## VAD tuning
 
 Voice Activity Detection controls how speech segments are carved out of the
-audio stream. Adjust these two settings in `[VAD]`:
+audio stream. Adjust these two settings in `[vad]`:
 
 | Goal | Setting |
 |---|---|

@@ -21,7 +21,7 @@ uv pip install -e .
 
 ### Optional: fine-tuning dependencies
 
-Only needed if you plan to run `listenr-finetune`. Requires PyTorch.
+Only needed if you plan to run `listenr finetune`. Requires PyTorch.
 
 ```bash
 uv pip install -e ".[finetune]"
@@ -34,23 +34,25 @@ uv pip install -e ".[finetune]"
 ## Run without activating the venv
 
 ```bash
-uv run listenr
-uv run listenr-build-dataset
-uv run listenr-finetune
+uv run listenr record
+uv run listenr build-dataset
+uv run listenr finetune
 ```
+
+Run `listenr --help` to list all commands; each command has its own `--help`.
 
 ## Or activate once per session
 
 ```bash
 source .venv/bin/activate
-listenr
+listenr record
 ```
 
 ---
 
 ## Install and start Lemonade Server
 
-Listenr talks to Lemonade over HTTP/WebSocket on `localhost:13305`. It must be running before you start `listenr`.
+Listenr talks to Lemonade over HTTP/WebSocket on `localhost:13305`. It must be running before you start `listenr record`.
 
 **Ubuntu (recommended):**
 ```bash
@@ -72,7 +74,7 @@ lemonade pull Whisper-Base
 lemonade pull gpt-oss-20b-mxfp4-GGUF
 ```
 
-> First-time pulls download weights from Hugging Face. Allow a few minutes depending on connection speed. You can swap models in `~/.config/listenr/config.ini`  - see [configuration.md](configuration.md) for options.
+> First-time pulls download weights from Hugging Face. Allow a few minutes depending on connection speed. You can swap models in `~/.config/listenr/config.toml`  - see [configuration.md](configuration.md) for options.
 
 Verify the server is reachable:
 
@@ -95,5 +97,5 @@ for i, d in enumerate(sd.query_devices()):
 "
 ```
 
-Set `input_device` in `~/.config/listenr/config.ini` to the device name (partial
+Set `input_device` in `~/.config/listenr/config.toml` to the device name (partial
 match works) or its index number. See [configuration.md](configuration.md).

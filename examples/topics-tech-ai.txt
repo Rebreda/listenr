@@ -1,4 +1,4 @@
-# Example topic phrases for listenr-categorize.
+# Example topic phrases for listenr categorize.
 # One phrase per line; blank lines and #-comments are ignored.
 # Each transcription is scored against every phrase; the best match wins.
 technology
