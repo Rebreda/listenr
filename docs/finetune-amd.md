@@ -277,16 +277,55 @@ can cause imbalance segfaults during training.
 
 ### Unsupported gfx version
 
-Some consumer cards need a gfx override. Uncomment the relevant line in
-`.env`:
+Fewer cards need this than they used to. ROCm 7.2 added official support for
+RDNA3 (RX 7900 XTX/XT/GRE, 7800 XT, 7700 XT) and RDNA4 (RX 9070 family, 9060
+family), so on those cards leave the override unset. Try a run without it
+first; only reach for the override if ROCm reports the device as unsupported.
+
+Where it is still needed, uncomment the relevant line in `.env`:
 
 ```
-HSA_OVERRIDE_GFX_VERSION=10.3.0   # RX 6000 series (RDNA2)
-HSA_OVERRIDE_GFX_VERSION=11.0.0   # RX 7000 series (RDNA3)
+HSA_OVERRIDE_GFX_VERSION=10.3.0   # RX 6000 series (RDNA2, gfx103x)
+HSA_OVERRIDE_GFX_VERSION=11.0.0   # RDNA3 cards ROCm does not list natively
+HSA_OVERRIDE_GFX_VERSION=11.5.1   # Strix Halo APUs (gfx1151), if needed
 ```
 
 > **Never** set `HSA_OVERRIDE_GFX_VERSION=""`  - an empty string is not
 > the same as unset and will crash ROCm at startup.
+
+### APUs with unified memory (Strix Halo / Ryzen AI MAX)
+
+On an APU there is no separate VRAM pool. The GPU and CPU share one pool, and
+the practical limit on model size is the GTT (shared memory) budget, not a
+BIOS VRAM carve-out.
+
+Check what you currently have:
+
+```bash
+awk '{printf "%.1f GB\n", $1*4096/1024/1024/1024}' /sys/module/ttm/parameters/pages_limit
+```
+
+The default is roughly half of system RAM. AMD's guidance is to keep the BIOS
+VRAM reservation small (0.5 GB is enough) and raise the shared limit instead,
+since a large carve-out permanently reserves memory that GTT would otherwise
+hand out on demand:
+
+```bash
+pipx install amd-debug-tools
+amd-ttm --set 48          # GB of GPU-accessible shared memory
+```
+
+Strix Halo needs Linux 6.18.4 or newer for the KFD driver fixes; on older
+kernels GPU compute initialization can fail outright. Fedora 43+, Ubuntu
+26.04 and Arch carry the fixes already.
+
+Full detail: [AMD Strix Halo system optimization](https://rocm.docs.amd.com/en/docs-7.2.0/how-to/system-optimization/strixhalo.html).
+
+> gfx1151 is not on AMD's official ROCm support matrix. The ROCm PyTorch
+> wheels target gfx1100 and run on gfx1151 through ISA compatibility, so it
+> works but is not a supported configuration, and there are open crash reports
+> against it. Prefer smaller base models (`whisper-small`,
+> `moonshine-base`) and confirm a `--dry-run` completes before a long run.
 
 ### Why `--group-add keep-groups` instead of `--group-add video`
 
