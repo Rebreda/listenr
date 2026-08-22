@@ -98,11 +98,15 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish
+      - name: Publish to PyPI
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish to TestPyPI
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # Empty means the default, which is PyPI.
-          repository-url: ${{ startsWith(github.ref, 'refs/tags/v') && '' || 'https://test.pypi.org/legacy/' }}
+          repository-url: https://test.pypi.org/legacy/
 
   github-release:
     needs: publish
