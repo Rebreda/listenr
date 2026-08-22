@@ -7,7 +7,7 @@
 
 **Build better speech-to-text and ASR models entirely on your machine.**
 
-Record your voice. Clean it up with local AI. Fine-tune a Whisper model. Deploy something that's actually yours.
+Record your voice. Clean it up with local AI. Fine-tune Whisper or Moonshine. Deploy something that's actually yours.
 
 <a href="https://quickthoughts.ca/posts/listenr-asr-training-data-problem/">Walkthrough</a> &nbsp;|&nbsp;
 <a href="https://github.com/Rebreda/listenr/blob/main/docs/setup.md">Setup</a> &nbsp;|&nbsp;
@@ -35,7 +35,7 @@ Record your voice. Clean it up with local AI. Fine-tune a Whisper model. Deploy 
 
 1. **Create good data** - Use Listenr to record and collect natural speech with domain-specific vocabulary that generic models miss.
 2. **Process & improve** - Pipe it through [Lemonade](https://lemonade-server.ai) or any OpenAI-compatible provider to transcribe with Whisper and automatically correct grammar, punctuation, and homophones using a local LLM.
-3. **Fine-tune & deploy** - Use Listenr to build train/dev/test splits and fine-tune a Whisper model with LoRA. Merge the adapter into a self-contained model you can deploy.
+3. **Fine-tune & deploy** - Use Listenr to build train/dev/test splits and fine-tune Whisper or Moonshine with LoRA. Merge the adapter into a self-contained model you can deploy.
 
 Everything stays local - no audio, text, or weights ever leave on your machine.
 
@@ -65,7 +65,7 @@ Working on Listenr itself? Clone the repo and `uv pip install -e ".[dev]"` inste
 # Build train/dev/test splits from your manifest
 listenr build-dataset --format hf
 
-# Fine-tune Whisper (see docs/finetune-amd.md for AMD GPUs)
+# Fine-tune Whisper or Moonshine (see docs/finetune-amd.md for AMD GPUs)
 podman compose run --rm finetune
 
 # Merge the LoRA adapter into a standalone model
@@ -89,7 +89,7 @@ See [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.
 
 **Auto-correction** - A local LLM cleans up punctuation, grammar, and homophones, producing a higher-quality training corpus than raw Whisper output alone.
 
-**Dataset & fine-tuning** - Listenr saves each utterance as a `.wav` clip and a line in `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace format. Another command fine-tunes any `openai/whisper-*` model using LoRA (works on AMD and NVIDIA GPUs via Podman).
+**Dataset & fine-tuning** - Listenr saves each utterance as a `.wav` clip and a line in `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace format. Another command fine-tunes any `openai/whisper-*` or `UsefulSensors/moonshine-*` model using LoRA (works on AMD and NVIDIA GPUs via Podman). Moonshine is the smaller, English-only, edge-oriented option; Whisper is the multilingual all-rounder.
 
 **Deployment** - `listenr merge` folds the LoRA adapter into a self-contained model that loads with plain `transformers`. No PEFT dependency. Run inference locally or deploy it anywhere.
 

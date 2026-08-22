@@ -79,18 +79,28 @@ def main() -> None:
         "--base-model",
         default=settings.finetune.base_model,
         metavar="MODEL_ID",
-        help=f"HuggingFace model id to fine-tune (default: {settings.finetune.base_model})",
+        help=(
+            "HuggingFace model id to fine-tune - any openai/whisper-* or "
+            "UsefulSensors/moonshine-* checkpoint "
+            f"(default: {settings.finetune.base_model})"
+        ),
     )
     parser.add_argument(
         "--language",
         default=settings.finetune.language,
-        help=f"Target language for the processor (default: {settings.finetune.language})",
+        help=(
+            "Target language for the processor; ignored by English-only models "
+            f"such as Moonshine (default: {settings.finetune.language})"
+        ),
     )
     parser.add_argument(
         "--task",
         default=settings.finetune.task,
         choices=["transcribe", "translate"],
-        help=f"Task token prepended during tokenisation (default: {settings.finetune.task})",
+        help=(
+            "Task token prepended during tokenisation; ignored by English-only "
+            f"models such as Moonshine (default: {settings.finetune.task})"
+        ),
     )
     parser.add_argument(
         "--no-freeze-encoder",
@@ -158,12 +168,13 @@ def main() -> None:
     except ImportError:
         print(
             "ERROR: transformers is required. Install with:\n"
-            "  uv pip install -e \".[finetune]\"",
+            "  uv pip install \"listenr[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    from listenr.finetune.data import make_processor, make_dataset, WhisperDataCollator
+    from listenr.finetune.architectures import UnsupportedArchitecture, detect
+    from listenr.finetune.data import make_processor, make_dataset, SpeechDataCollator
     from listenr.finetune.model import (
         load_base_model,
         make_lora_config,
@@ -184,9 +195,16 @@ def main() -> None:
         )
         sys.exit(1)
 
+    try:
+        arch = detect(args.base_model)
+    except UnsupportedArchitecture as exc:
+        logger.error(str(exc))
+        sys.exit(1)
+    logger.info(f"Architecture: {arch.model_type}")
+
     logger.info(f"Loading dataset from {dataset_path}")
-    processor = make_processor(args.base_model, args.language, args.task)
-    dataset = make_dataset(dataset_path, processor)
+    processor = make_processor(args.base_model, args.language, args.task, arch)
+    dataset = make_dataset(dataset_path, processor, arch.feature_key)
     logger.info(f"Dataset splits: { {k: len(v) for k, v in dataset.items()} }")
 
     # -----------------------------------------------------------------------
@@ -195,10 +213,12 @@ def main() -> None:
     logger.info(f"Loading base model: {args.base_model}")
     model = load_base_model(args.base_model)
 
-    # Set generation config to avoid deprecation warnings and force correct tokens.
-    model.generation_config.language = args.language
-    model.generation_config.task = args.task
-    model.generation_config.forced_decoder_ids = None
+    # Set generation config to avoid deprecation warnings and force correct
+    # tokens. English-only families (Moonshine) have no language/task tokens.
+    if arch.supports_language_and_task:
+        model.generation_config.language = args.language
+        model.generation_config.task = args.task
+        model.generation_config.forced_decoder_ids = None
 
     lora_cfg = make_lora_config(
         r=args.lora_r,
@@ -228,9 +248,11 @@ def main() -> None:
     output_dir = Path(args.output).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    data_collator = WhisperDataCollator(
+    data_collator = SpeechDataCollator(
         processor=processor,
         decoder_start_token_id=model.config.decoder_start_token_id,
+        feature_key=arch.feature_key,
+        pad_features=arch.pad_features,
     )
     compute_metrics = make_compute_metrics(processor.tokenizer)
 

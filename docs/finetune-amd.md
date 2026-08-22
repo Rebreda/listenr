@@ -1,7 +1,7 @@
 # Fine-tuning on AMD GPU (ROCm)
 
-LoRA fine-tune Whisper on your own recordings using AMD ROCm + Podman.
-Everything stays on your machine.
+LoRA fine-tune Whisper or Moonshine on your own recordings using AMD ROCm +
+Podman. Everything stays on your machine.
 
 > The fine-tune code works directly on the host if you already have ROCm
 > PyTorch installed. The container is just the easiest way to get a
@@ -124,12 +124,40 @@ Adapter checkpoints land in `~/listenr_finetune/`, owned by your host UID
 | `--max-steps N` | `2000` | Total training steps |
 | `--batch-size N` | `8` | Per-device batch size |
 | `--lora-r N` | `8` | LoRA rank (higher = more capacity, more VRAM) |
-| `--language LANG` | `english` | Target language |
+| `--language LANG` | `english` | Target language (Whisper only) |
 | `--bf16` | on (in compose) | bf16 mixed precision  - **use this on AMD** |
 | `--fp16` | off | fp16  - CUDA only, not recommended for AMD |
 | `--dry-run` | off | Load data + model, print stats, exit |
 
 Full list: `podman compose run --rm finetune --help`.
+
+### Choosing a base model
+
+Listenr fine-tunes two encoder-decoder families, and picks the right data
+pipeline for whichever one `--base-model` names:
+
+| Family | Example ids | Notes |
+|---|---|---|
+| Whisper | `openai/whisper-tiny` … `openai/whisper-large-v3-turbo` | Multilingual; `--language` and `--task` apply |
+| Moonshine | `UsefulSensors/moonshine-tiny`, `UsefulSensors/moonshine-base` | English-only, much smaller, built for edge and low-latency use; `--language`/`--task` are ignored |
+
+```bash
+podman compose run --rm finetune --base-model UsefulSensors/moonshine-base
+```
+
+Moonshine is the cheaper experiment: `moonshine-tiny` is 27M parameters
+against `whisper-small`'s 244M, so a run finishes far sooner and fits in much
+less VRAM. Whisper remains the better choice for multilingual work or when you
+need the accuracy of the large checkpoints.
+
+The two differ in what the encoder consumes. Whisper takes a log-Mel
+spectrogram padded to a fixed 30 s window; Moonshine takes the raw waveform at
+its natural length. That is why the collator pads Moonshine batches and not
+Whisper ones. `listenr merge` and `listenr eval` both detect the family from
+the checkpoint, so the rest of the flow is unchanged.
+
+CTC and transducer models (Parakeet, Wav2Vec2) are **not** supported: they use
+a different loss and label layout, so they need more than a new table entry.
 
 > **Compose gotcha:** `podman compose run SERVICE EXTRA_ARGS` *replaces*
 > the `command:` list but leaves `entrypoint:` alone. This repo puts the

@@ -15,6 +15,7 @@ keywords = [
     "asr",
     "speech-to-text",
     "whisper",
+    "moonshine",
     "fine-tuning",
     "lora",
     "lemonade",
@@ -63,7 +64,8 @@ categorize = [
     "sentence-transformers",
 ]
 finetune = [
-    "transformers>=4.40",
+    # Moonshine support landed in transformers 4.48.
+    "transformers>=4.48",
     "peft>=0.11",
     "accelerate>=0.29",
     "datasets",

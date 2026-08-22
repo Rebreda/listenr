@@ -124,8 +124,8 @@ class TestMergeAdapterFullMock:
         mock_peft_cls = MagicMock()
         mock_peft_cls.from_pretrained.return_value = mock_peft_model
 
-        mock_whisper_cls = MagicMock()
-        mock_whisper_cls.from_pretrained.return_value = mock_base_model
+        mock_model_cls = MagicMock()
+        mock_model_cls.from_pretrained.return_value = mock_base_model
 
         mock_processor_cls = MagicMock()
         mock_processor_cls.from_pretrained.return_value = mock_processor
@@ -134,8 +134,8 @@ class TestMergeAdapterFullMock:
         fake_peft = MagicMock()
         fake_peft.PeftModel = mock_peft_cls
         fake_transformers = MagicMock()
-        fake_transformers.WhisperForConditionalGeneration = mock_whisper_cls
-        fake_transformers.WhisperProcessor = mock_processor_cls
+        fake_transformers.AutoModelForSpeechSeq2Seq = mock_model_cls
+        fake_transformers.AutoProcessor = mock_processor_cls
 
         with patch.dict(sys.modules, {
             "peft": fake_peft,
@@ -148,7 +148,7 @@ class TestMergeAdapterFullMock:
             "peft_model": mock_peft_model,
             "merged_model": mock_merged_model,
             "processor": mock_processor,
-            "whisper_cls": mock_whisper_cls,
+            "model_cls": mock_model_cls,
             "peft_cls": mock_peft_cls,
             "processor_cls": mock_processor_cls,
         }
@@ -157,7 +157,7 @@ class TestMergeAdapterFullMock:
         adapter_dir = self._make_adapter_dir(tmp_path)
         output_dir = tmp_path / "merged"
         mocks = self._run_merge(adapter_dir, output_dir)
-        mocks["whisper_cls"].from_pretrained.assert_called_once_with(
+        mocks["model_cls"].from_pretrained.assert_called_once_with(
             "openai/whisper-small", device_map="cpu"
         )
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-evaluate.py — Evaluate the merged fine-tuned Whisper model on held-out data.
+evaluate.py — Evaluate the merged fine-tuned ASR model on held-out data.
 
 Transcribes the test split of the dataset written by ``listenr build-dataset
 --format hf`` with the merged model, compares against the ground-truth
@@ -163,7 +163,7 @@ def tally_keywords(
 # ---------------------------------------------------------------------------
 
 def make_asr(model_id_or_path: str | Path):
-    """Load a Whisper ASR pipeline pinned to GPU if available."""
+    """Load an ASR pipeline for *model_id_or_path*, pinned to GPU if available."""
     try:
         import torch
         from transformers import pipeline
@@ -171,7 +171,7 @@ def make_asr(model_id_or_path: str | Path):
     except ImportError:
         print(
             "ERROR: transformers and torch are required. Install with:\n"
-            "  uv pip install -e \".[finetune]\"",
+            "  uv pip install \"listenr[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -194,13 +194,28 @@ def make_asr(model_id_or_path: str | Path):
     )
 
 
-def _generate_kwargs() -> dict:
-    # Match the fine-tune task so base and merged are compared fairly.
+def _generate_kwargs(model_id_or_path: str | Path) -> dict:
+    """Generation kwargs that match the fine-tune task.
+
+    Base and merged models must be decoded the same way to be compared
+    fairly. Language and task tokens only exist on multilingual families.
+    Passing them to an English-only model (Moonshine) is an error, so they
+    are omitted there.
+    """
+    from listenr.finetune.architectures import detect
+
+    try:
+        arch = detect(str(model_id_or_path))
+    except Exception:
+        return {}
+    if not arch.supports_language_and_task:
+        return {}
     return {"language": settings.finetune.language, "task": settings.finetune.task}
 
 
 def _transcribe(asr, audio_path: str | Path) -> str:
-    return asr(str(audio_path), generate_kwargs=_generate_kwargs())["text"].strip()
+    kwargs = _generate_kwargs(asr.model.name_or_path)
+    return asr(str(audio_path), generate_kwargs=kwargs)["text"].strip()
 
 
 def load_split(dataset_path: Path, split: str) -> list[dict]:
@@ -383,7 +398,7 @@ def evaluate_single(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Evaluate the merged fine-tuned Whisper model on the held-out test split.",
+        description="Evaluate the merged fine-tuned ASR model on the held-out test split.",
     )
     parser.add_argument(
         "--model",

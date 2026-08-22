@@ -1,5 +1,5 @@
 """
-model.py — Model loading and LoRA configuration for Whisper fine-tuning.
+model.py — Model loading and LoRA configuration for speech seq2seq fine-tuning.
 
 All functions are pure (no global state) to make them easy to test in
 isolation.
@@ -10,7 +10,7 @@ Requires the ``finetune`` optional dependencies::
 
 Public API
 ----------
-load_base_model(model_id)                      -> WhisperForConditionalGeneration
+load_base_model(model_id)                      -> encoder-decoder ASR model
 make_lora_config(r, alpha, dropout, modules)   -> LoraConfig
 apply_lora(model, lora_config)                 -> PeftModel
 freeze_encoder(model)                          -> None  (in-place)
@@ -28,22 +28,25 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 def load_base_model(model_id: str) -> Any:
-    """Load the pre-trained Whisper model from *model_id*.
+    """Load the pre-trained encoder-decoder ASR model from *model_id*.
+
+    Resolves the concrete class from the checkpoint config, so any family in
+    :mod:`listenr.finetune.architectures` loads through the same call.
 
     The model is returned in full precision (fp32).  The caller is responsible
     for casting to fp16/bf16 via ``Seq2SeqTrainingArguments`` at training time.
     """
     try:
-        from transformers import WhisperForConditionalGeneration
+        from transformers import AutoModelForSpeechSeq2Seq
     except ImportError:
         print(
             "ERROR: transformers is required. Install with:\n"
-            "  uv pip install -e \".[finetune]\"",
+            "  uv pip install \"listenr[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    return WhisperForConditionalGeneration.from_pretrained(model_id)
+    return AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +59,7 @@ def make_lora_config(
     dropout: float,
     target_modules: list[str],
 ) -> Any:
-    """Build a PEFT :class:`LoraConfig` for a Whisper Seq2Seq model.
+    """Build a PEFT :class:`LoraConfig` for a speech Seq2Seq model.
 
     Parameters
     ----------
@@ -69,22 +72,23 @@ def make_lora_config(
     dropout:
         Dropout applied to the LoRA layers during training.
     target_modules:
-        Which attention projections to adapt.  Whisper decoder attention has
-        ``q_proj``, ``k_proj``, ``v_proj``, ``out_proj``; adapting just
-        ``q_proj`` and ``v_proj`` is the minimal effective set.
+        Which attention projections to adapt.  Whisper attention has
+        ``q_proj``, ``k_proj``, ``v_proj``, ``out_proj`` and Moonshine has the
+        same but named ``o_proj``; adapting just ``q_proj`` and ``v_proj`` is
+        the minimal effective set and is spelled the same in both.
     """
     try:
         from peft import LoraConfig
     except ImportError:
         print(
             "ERROR: peft is required. Install with:\n"
-            "  uv pip install -e \".[finetune]\"",
+            "  uv pip install \"listenr[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
 
     # No task_type: SEQ_2_SEQ_LM is for text-to-text models and injects a stray
-    # input_ids=None that collides with Whisper's decoder input_ids.
+    # input_ids=None that collides with the audio decoder's input_ids.
     return LoraConfig(
         inference_mode=False,
         r=r,
@@ -110,7 +114,7 @@ def apply_lora(model: Any, lora_config: Any) -> Any:
     except ImportError:
         print(
             "ERROR: peft is required. Install with:\n"
-            "  uv pip install -e \".[finetune]\"",
+            "  uv pip install \"listenr[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -123,15 +127,15 @@ def apply_lora(model: Any, lora_config: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 def freeze_encoder(model: Any) -> None:
-    """Freeze all parameters in the Whisper encoder (in-place).
+    """Freeze all parameters in the audio encoder (in-place).
 
     The encoder already extracts high-quality audio features from pre-training;
     only the decoder needs domain adaptation for a new vocabulary/style.
 
-    Works both on a raw ``WhisperForConditionalGeneration`` and on a
-    ``PeftModel`` wrapping one.
+    Works both on a raw ``…ForConditionalGeneration`` and on a ``PeftModel``
+    wrapping one.  Whisper and Moonshine both expose ``.model.encoder``.
     """
-    # PeftModel wraps the base model under .base_model.model; raw Whisper has
+    # PeftModel wraps the base model under .base_model.model; the raw model has
     # .model.encoder directly.
     try:
         encoder = model.base_model.model.model.encoder

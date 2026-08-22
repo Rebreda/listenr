@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-merge.py — Merge a LoRA adapter into the base Whisper model.
+merge.py — Merge a LoRA adapter into its base speech seq2seq model.
 
 After fine-tuning with ``listenr finetune``, the output directory contains
 only the compact LoRA adapter weights.  This script folds those weights
 permanently into the base model and saves a self-contained
-``WhisperForConditionalGeneration`` that can be loaded anywhere without PEFT
+``…ForConditionalGeneration`` that can be loaded anywhere without PEFT
 installed.
 
 Usage:
@@ -72,7 +72,7 @@ def read_base_model_id(adapter_dir: Path) -> str:
 def merge_adapter(adapter_dir: Path, output_dir: Path, dry_run: bool = False) -> None:
     """Load a PEFT LoRA adapter, merge it into the base model, and save.
 
-    The output directory will contain a standalone ``WhisperForConditionalGeneration``
+    The output directory will contain a standalone ``…ForConditionalGeneration``
     (in safetensors format) plus the processor artifacts copied from ``adapter_dir``
     so the directory is fully self-contained.
 
@@ -105,17 +105,19 @@ def merge_adapter(adapter_dir: Path, output_dir: Path, dry_run: bool = False) ->
 
     try:
         from peft import PeftModel
-        from transformers import WhisperForConditionalGeneration, WhisperProcessor
+        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
     except ImportError:
         logger.error(
             "transformers and peft are required. Install with:\n"
-            "  uv pip install -e '.[finetune]'"
+            "  uv pip install 'listenr[finetune]'"
         )
         sys.exit(1)
 
     # ── load ──────────────────────────────────────────────────────────────────
+    # Auto* resolves the concrete class from the checkpoint config, so Whisper
+    # and Moonshine adapters merge through the same path.
     logger.info(f"Loading base model '{base_model_id}' ...")
-    base_model = WhisperForConditionalGeneration.from_pretrained(
+    base_model = AutoModelForSpeechSeq2Seq.from_pretrained(
         base_model_id,
         device_map="cpu",
     )
@@ -125,8 +127,8 @@ def merge_adapter(adapter_dir: Path, output_dir: Path, dry_run: bool = False) ->
 
     # ── merge & unload ────────────────────────────────────────────────────────
     # merge_and_unload() folds the LoRA delta (α/r · BA) into each adapted
-    # weight matrix and returns a plain WhisperForConditionalGeneration with
-    # no remaining PEFT structure.
+    # weight matrix and returns a plain …ForConditionalGeneration with no
+    # remaining PEFT structure.
     logger.info("Merging LoRA weights into base model ...")
     merged_model = peft_model.merge_and_unload()
 
@@ -140,7 +142,7 @@ def merge_adapter(adapter_dir: Path, output_dir: Path, dry_run: bool = False) ->
     # and can be loaded with from_pretrained() without the adapter directory.
     logger.info("Saving processor ...")
     try:
-        processor = WhisperProcessor.from_pretrained(str(adapter_dir))
+        processor = AutoProcessor.from_pretrained(str(adapter_dir))
         processor.save_pretrained(str(output_dir))
     except Exception as exc:  # noqa: BLE001
         # Processor save is best-effort; a missing tokenizer file is not fatal.
@@ -160,9 +162,9 @@ def _print_summary(output_dir: Path, base_model_id: str) -> None:
     print(f"  Total size : {total_bytes / 1_048_576:.1f} MB")
     print()
     print("  Load with:")
-    print("    from transformers import WhisperForConditionalGeneration, WhisperProcessor")
-    print(f"    model = WhisperForConditionalGeneration.from_pretrained('{output_dir}')")
-    print(f"    processor = WhisperProcessor.from_pretrained('{output_dir}')")
+    print("    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor")
+    print(f"    model = AutoModelForSpeechSeq2Seq.from_pretrained('{output_dir}')")
+    print(f"    processor = AutoProcessor.from_pretrained('{output_dir}')")
     print("--------------------------------------\n")
 
 
@@ -173,7 +175,7 @@ def _print_summary(output_dir: Path, base_model_id: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Merge a LoRA adapter into its base Whisper model, producing a "
+            "Merge a LoRA adapter into its base speech model, producing a "
             "self-contained model directory usable without PEFT."
         )
     )

@@ -867,7 +867,7 @@ requires-dist = [
     { name = "sounddevice" },
     { name = "soundfile" },
     { name = "tensorboard", marker = "extra == 'finetune'" },
-    { name = "transformers", marker = "extra == 'finetune'", specifier = ">=4.40" },
+    { name = "transformers", marker = "extra == 'finetune'", specifier = ">=4.48" },
     { name = "websockets" },
 ]
 provides-extras = ["dev", "mdc", "hf", "categorize", "finetune"]
