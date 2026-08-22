@@ -67,10 +67,10 @@ scripts/setup-env.sh
 Writes `.env` with `$HOME`-relative paths and sensible GPU defaults:
 
 ```
-LISTENR_DATA=$HOME/.listenr
-LISTENR_DATASET=$HOME/listenr_dataset
-LISTENR_FINETUNE=$HOME/listenr_finetune
-LISTENR_MERGED=$HOME/listenr_merged
+LISTENR_HOST_DATA=$HOME/.listenr
+LISTENR_HOST_DATASET=$HOME/listenr_dataset
+LISTENR_HOST_FINETUNE=$HOME/listenr_finetune
+LISTENR_HOST_MERGED=$HOME/listenr_merged
 HF_CACHE=$HOME/.cache/huggingface
 HIP_VISIBLE_DEVICES=0
 TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1

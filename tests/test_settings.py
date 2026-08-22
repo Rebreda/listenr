@@ -85,6 +85,23 @@ class TestEnvSource:
         monkeypatch.setenv("LISTENR_FINETUNE__LORA_TARGET_MODULES", "q_proj,k_proj,v_proj")
         assert Settings().finetune.lora_target_modules == ["q_proj", "k_proj", "v_proj"]
 
+    def test_section_named_var_holding_a_path_is_ignored(self, isolated_env, monkeypatch):
+        """A stale LISTENR_FINETUNE=<host path> must not crash the import."""
+        monkeypatch.setenv("LISTENR_FINETUNE", "/home/you/listenr_finetune")
+        with pytest.warns(RuntimeWarning, match="LISTENR_FINETUNE"):
+            s = Settings()
+        assert s.finetune.max_steps == Settings.model_fields["finetune"].default.max_steps
+
+    def test_section_named_var_holding_json_still_applies(self, isolated_env, monkeypatch):
+        monkeypatch.setenv("LISTENR_FINETUNE", '{"max_steps": 77}')
+        assert Settings().finetune.max_steps == 77
+
+    def test_stale_dotenv_is_ignored(self, isolated_env, monkeypatch, tmp_path):
+        (tmp_path / ".env").write_text("LISTENR_DATASET=/home/you/listenr_dataset\n")
+        monkeypatch.chdir(tmp_path)
+        with pytest.warns(RuntimeWarning, match="LISTENR_DATASET"):
+            assert Settings().dataset.split == "80/10/10"
+
 
 class TestValidation:
     def test_bad_int_is_a_loud_error(self, isolated_env):

@@ -60,15 +60,15 @@ services:
       #   RX 6000 / RDNA2 → 10.3.0       RX 7000 / RDNA3 → 11.0.0
     volumes:
       # HF dataset produced by build-dataset
-      - "${LISTENR_DATASET}:/data/dataset:z"
+      - "${LISTENR_HOST_DATASET}:/data/dataset:z"
       # Audio source: dataset Arrow files store absolute host paths to .wav
-      # clips, so mount LISTENR_DATA at the SAME path inside the container.
+      # clips, so mount LISTENR_HOST_DATA at the SAME path inside the container.
       # (Avoid by rebuilding the dataset with `build-dataset --remap-audio-prefix`.)
-      - "${LISTENR_DATA}:${LISTENR_DATA}:z,ro"
+      - "${LISTENR_HOST_DATA}:${LISTENR_HOST_DATA}:z,ro"
       # Adapter checkpoint output
-      - "${LISTENR_FINETUNE}:/data/adapter:z"
+      - "${LISTENR_HOST_FINETUNE}:/data/adapter:z"
       # Listenr config (read by listenr finetune)
-      - "${LISTENR_CONFIG}:/home/ubuntu/.config/listenr:z"
+      - "${LISTENR_HOST_CONFIG}:/home/ubuntu/.config/listenr:z"
       # HuggingFace model cache — avoids re-downloading on every run.
       # Mounted under /home/ubuntu (not /root) because userns_mode=keep-id
       # makes the container process run as the host UID == image's ubuntu user.
@@ -92,9 +92,9 @@ services:
     <<: *rocm-base
     volumes:
       # Audio clips + manifest.jsonl
-      - "${LISTENR_DATA}:/data/listenr:z"
+      - "${LISTENR_HOST_DATA}:/data/listenr:z"
       # Dataset output
-      - "${LISTENR_DATASET}:/data/dataset:z"
+      - "${LISTENR_HOST_DATASET}:/data/dataset:z"
     working_dir: /app
     # Defaults in entrypoint so `run SERVICE EXTRA_ARGS` can append flags
     # without wiping out the manifest/output paths. See note on finetune service.
@@ -106,7 +106,7 @@ services:
       - "--format=hf"
       # Rewrites host absolute paths in manifest.jsonl to container paths.
       # OLD is the host prefix stored in manifest entries; NEW is where it's mounted here.
-      - "--remap-audio-prefix=${LISTENR_DATA}/audio_clips:/data/listenr/audio_clips"
+      - "--remap-audio-prefix=${LISTENR_HOST_DATA}/audio_clips:/data/listenr/audio_clips"
     command: []
 
   # ── merge LoRA adapter into base model → standalone merged model ──────────
@@ -120,9 +120,9 @@ services:
       CUDA_VISIBLE_DEVICES: "-1"
     volumes:
       # LoRA adapter produced by finetune (input)
-      - "${LISTENR_FINETUNE}:/data/adapter:z"
+      - "${LISTENR_HOST_FINETUNE}:/data/adapter:z"
       # Destination for the merged model (output)
-      - "${LISTENR_MERGED}:/data/merged:z"
+      - "${LISTENR_HOST_MERGED}:/data/merged:z"
       # HuggingFace model cache — avoids re-downloading base model
       - "${HF_CACHE}:/root/.cache/huggingface:z"
     working_dir: /app

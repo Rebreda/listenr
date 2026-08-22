@@ -22,11 +22,11 @@ TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 # HSA_OVERRIDE_GFX_VERSION=11.0.0   # RDNA3 (RX 7000)
 
 # ── paths ────────────────────────────────────────────────────────────────────
-LISTENR_DATA=$HOME/.listenr
-LISTENR_DATASET=$HOME/listenr_dataset
-LISTENR_FINETUNE=$HOME/listenr_finetune
-LISTENR_CONFIG=$HOME/.config/listenr
-LISTENR_MERGED=$HOME/listenr_merged
+LISTENR_HOST_DATA=$HOME/.listenr
+LISTENR_HOST_DATASET=$HOME/listenr_dataset
+LISTENR_HOST_FINETUNE=$HOME/listenr_finetune
+LISTENR_HOST_CONFIG=$HOME/.config/listenr
+LISTENR_HOST_MERGED=$HOME/listenr_merged
 HF_CACHE=$HOME/.cache/huggingface
 EOF
 
