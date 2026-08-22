@@ -10,6 +10,9 @@ __pycache__/
 # Log files
 *.log
 
+# Recordings, imported corpora, and anything else under the local data dir
+data/
+
 # Compiled Python files
 *.pyc
 *.pyo
