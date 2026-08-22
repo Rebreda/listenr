@@ -16,7 +16,10 @@ Usage::
 
 from __future__ import annotations
 
+import json
 import os
+import warnings
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -25,6 +28,8 @@ from typing import Annotated
 from pydantic import AfterValidator, BaseModel, field_validator
 from pydantic_settings import (
     BaseSettings,
+    DotEnvSettingsSource,
+    EnvSettingsSource,
     NoDecode,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
@@ -143,6 +148,55 @@ DEFAULT_CORRECTIONS: dict[str, str] = {
 }
 
 
+def _is_json(value: str | None) -> bool:
+    try:
+        json.loads(value or "")
+    except ValueError:
+        return False
+    return True
+
+
+class _IgnoreSectionVars:
+    """Drop bare ``LISTENR_<SECTION>`` variables before pydantic decodes them.
+
+    Each section below is a nested model, so pydantic treats a bare
+    ``LISTENR_FINETUNE`` as JSON for the whole section and raises at import
+    when it holds anything else. docker-compose and older ``.env`` files used
+    exactly those names for host paths (now ``LISTENR_HOST_*``), so ignore
+    them with a warning rather than crashing. Per-key overrides such as
+    ``LISTENR_FINETUNE__MAX_STEPS`` use the ``__`` delimiter and are untouched.
+    """
+
+    def _load_env_vars(self) -> Mapping[str, str | None]:
+        env_vars = super()._load_env_vars()  # type: ignore[misc]
+        unusable = {
+            key
+            for key in _SECTION_ENV_VARS & set(env_vars)
+            if not _is_json(env_vars[key])
+        }
+        if not unusable:
+            return env_vars
+        warnings.warn(
+            "Ignoring environment variable(s) "
+            + ", ".join(sorted(v.upper() for v in unusable))
+            + ": each names a whole settings section, so its value must be JSON. "
+            "Set a single key with the __ delimiter instead, e.g. "
+            "LISTENR_FINETUNE__MAX_STEPS=500. Host mount paths for "
+            "docker-compose are now named LISTENR_HOST_*. Update your .env.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return {k: v for k, v in env_vars.items() if k not in unusable}
+
+
+class _EnvSource(_IgnoreSectionVars, EnvSettingsSource):
+    pass
+
+
+class _DotEnvSource(_IgnoreSectionVars, DotEnvSettingsSource):
+    pass
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="LISTENR_",
@@ -173,10 +227,14 @@ class Settings(BaseSettings):
         toml_file = Path(os.environ.get("LISTENR_CONFIG", CONFIG_FILE))
         return (
             init_settings,
-            env_settings,
-            dotenv_settings,
+            _EnvSource(settings_cls),
+            _DotEnvSource(settings_cls),
             TomlConfigSettingsSource(settings_cls, toml_file=toml_file),
         )
 
+
+# Env names that address a whole section (e.g. LISTENR_FINETUNE) rather than a
+# single key. Populated after the class so it tracks the fields automatically.
+_SECTION_ENV_VARS = {f"listenr_{name}" for name in Settings.model_fields}
 
 settings = Settings()
