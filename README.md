@@ -9,6 +9,11 @@
 
 Record your voice. Clean it up with local AI. Fine-tune Whisper or Moonshine. Deploy something that's actually yours.
 
+[![PyPI](https://img.shields.io/pypi/v/listenr?logo=pypi&logoColor=white)](https://pypi.org/project/listenr/)
+[![Python](https://img.shields.io/pypi/pyversions/listenr?logo=python&logoColor=white)](https://pypi.org/project/listenr/)
+[![License](https://img.shields.io/pypi/l/listenr)](https://github.com/Rebreda/listenr/blob/main/LICENSE)
+[![Tests](https://github.com/Rebreda/listenr/actions/workflows/tests.yml/badge.svg)](https://github.com/Rebreda/listenr/actions/workflows/tests.yml)
+
 <a href="https://quickthoughts.ca/posts/listenr-asr-training-data-problem/">Walkthrough</a> &nbsp;|&nbsp;
 <a href="https://github.com/Rebreda/listenr/blob/main/docs/setup.md">Setup</a> &nbsp;|&nbsp;
 <a href="https://github.com/Rebreda/listenr/blob/main/docs/configuration.md">Configuration</a> &nbsp;|&nbsp;
@@ -57,6 +62,11 @@ lemonade pull gpt-oss-20b-mxfp4-GGUF
 uv tool install listenr   # or: pipx install listenr
 listenr record            # start recording
 ```
+
+On [PyPI](https://pypi.org/project/listenr/). Python 3.11 or newer. The core
+install covers recording, transcription and dataset building; fine-tuning and
+the dataset importers live behind extras, listed in
+[docs/setup.md](https://github.com/Rebreda/listenr/blob/main/docs/setup.md).
 
 Working on Listenr itself? Clone the repo and `uv pip install -e ".[dev]"` instead.
 
