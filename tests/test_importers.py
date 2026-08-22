@@ -7,6 +7,7 @@ import types
 from pathlib import Path
 
 import numpy as np
+import pytest
 import soundfile as sf
 
 from listenr.importers import manifest as m
@@ -140,7 +141,8 @@ class TestWriteManifest:
 
 class TestMDCLoader:
     def test_import_mdc_dataset_writes_manifest(self, tmp_path, monkeypatch):
-        import pandas as pd
+        # The MDC SDK hands back a DataFrame, so this path needs the mdc extra.
+        pd = pytest.importorskip("pandas")
 
         audio_path = _wav(tmp_path / "clip.wav")
         fake = types.ModuleType("datacollective")

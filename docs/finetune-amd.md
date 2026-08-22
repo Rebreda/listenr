@@ -23,7 +23,7 @@ scripts/setup-env.sh                              # 2. write .env from $HOME
 podman compose run --rm build-dataset             # 3. build train/dev/test splits
 podman compose run --rm finetune                  # 4. fine-tune (bf16, 2000 steps)
 podman compose run --rm merge                     # 5. merge adapter → standalone model
-uv run listenr eval --compare-base --model ~/listenr_merged   # 6. base vs fine-tuned
+listenr eval --compare-base --model ~/listenr_merged   # 6. base vs fine-tuned
 ```
 
 That's it. The rest of this doc explains what each step does and how to
@@ -179,14 +179,14 @@ Output (~926 MB for whisper-small):
 
 ```bash
 # Compare original vs fine-tuned on a single file
-uv run listenr eval --audio path/to/clip.wav
+listenr eval --audio path/to/clip.wav
 
 # Evaluate the held-out test split, base model side-by-side, with WER
 # (--model: the container merge flow writes to ~/listenr_merged, see .env)
-uv run listenr eval --compare-base --model ~/listenr_merged
+listenr eval --compare-base --model ~/listenr_merged
 
 # Recall check: did the fine-tune learn your domain words?
-uv run listenr eval --compare-base --keyword Claude --keyword Cursor --n 50
+listenr eval --compare-base --keyword Claude --keyword Cursor --n 50
 ```
 
 `listenr eval` runs the merged model over the **test split** of the dataset
@@ -331,9 +331,9 @@ The `listenr finetune` line **must** include `--dataset/--output/--bf16`
 If you have ROCm PyTorch already installed:
 
 ```bash
-uv pip install -e ".[finetune]"
-uv run listenr build-dataset --format hf
-uv run listenr finetune --bf16
-uv run listenr merge
-uv run listenr eval --compare-base
+uv pip install "listenr[finetune]"
+listenr build-dataset --format hf
+listenr finetune --bf16
+listenr merge
+listenr eval --compare-base
 ```

@@ -14,8 +14,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 from listenr.importers import manifest as m
 from listenr.importers._cli import add_common_arguments, load_env, log_summary
 from listenr.importers.mapping import FieldMapping
@@ -29,10 +27,12 @@ MDC_MAPPING = FieldMapping()
 def load_rows(dataset_id: str, enable_logging: bool = False) -> tuple[list[dict], str]:
     """Load an MDC dataset into row dicts plus its display name."""
     try:
+        import pandas as pd
         from datacollective import get_dataset_details, load_dataset  # type: ignore
     except ImportError as exc:
         raise RuntimeError(
-            "datacollective is required for MDC imports. Install it with: uv pip install -e .[mdc]"
+            f"MDC imports need the 'mdc' extra ({exc}). "
+            "Install it with: uv pip install 'listenr[mdc]'"
         ) from exc
 
     dataset_name = ""

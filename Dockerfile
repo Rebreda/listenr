@@ -10,10 +10,6 @@
 # NOTE: sounddevice (microphone capture) will not work inside this container.
 #       This image is intended for fine-tuning only (listenr finetune /
 #       listenr build-dataset), not real-time audio capture.
-#
-# NOTE: listenr requires Python >=3.13 for local installs; this image uses
-#       Python 3.12 (the AMD-tested version). --ignore-requires-python is safe
-#       here — the codebase uses no 3.13-only syntax.
 
 FROM rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
 
@@ -44,9 +40,7 @@ RUN pip show torch torchvision torchaudio triton 2>/dev/null \
     && cat /tmp/torch-constraints.txt
 
 # Install core + finetune extras, pinning torch to the ROCm version above.
-# --ignore-requires-python: base image is Python 3.12; constraint is >=3.13.
 RUN pip install --no-cache-dir \
-        --ignore-requires-python \
         --constraint /tmp/torch-constraints.txt \
         -e ".[finetune]"
 

@@ -1,10 +1,11 @@
 """Tests for the unified `listenr` CLI dispatcher."""
 
+import importlib
 import importlib.util
 
 import pytest
 
-from listenr.main import COMMANDS, main
+from listenr.main import COMMANDS, EXTRAS, main
 
 
 def _run(monkeypatch, *argv):
@@ -46,3 +47,36 @@ def test_dispatch_rewrites_argv(monkeypatch, capsys):
         _run(monkeypatch, "build-dataset", "--help")
     assert excinfo.value.code == 0
     assert "listenr build-dataset" in capsys.readouterr().out
+
+
+def test_every_extra_names_a_real_command():
+    assert set(EXTRAS) <= set(COMMANDS)
+
+
+def _fail_importing(monkeypatch, target, message):
+    """Make importing *target* fail, leaving every other import alone.
+
+    pytest's own machinery imports modules while running the test, so a
+    blanket failure would take those down with it.
+    """
+    real = importlib.import_module
+
+    def fake(name, *args, **kwargs):
+        if name == target:
+            raise ImportError(message)
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(importlib, "import_module", fake)
+
+
+def test_missing_extra_reports_the_install_command(monkeypatch, capsys):
+    _fail_importing(monkeypatch, "listenr.finetune.train", "No module named 'peft'")
+    assert _run(monkeypatch, "finetune") == 1
+    err = capsys.readouterr().err
+    assert "listenr[finetune]" in err
+
+
+def test_import_error_in_a_core_command_is_not_swallowed(monkeypatch):
+    _fail_importing(monkeypatch, "listenr.cli", "genuinely broken")
+    with pytest.raises(ImportError):
+        _run(monkeypatch, "record")

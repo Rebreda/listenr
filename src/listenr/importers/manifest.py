@@ -15,7 +15,6 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import soundfile as sf
 
 from listenr.importers.mapping import FieldMapping
@@ -36,11 +35,23 @@ def _slug(value: str) -> str:
     return value.strip().replace("/", "__").replace(" ", "_") or "dataset"
 
 
+try:  # pandas ships with the importer extras, not with the core install
+    from pandas import isna as _isna
+except ImportError:  # pragma: no cover - exercised by the core-only install
+    from numpy import isnan as _isna
+
+
 def _is_missing(value: Any) -> bool:
+    """True for ``None`` and for null markers (NaN, NaT, ``pd.NA``).
+
+    Importer rows come straight out of a DataFrame, so nulls arrive in
+    whatever form the source used. Non-scalars (arrays) raise here and are
+    treated as present.
+    """
     if value is None:
         return True
     try:
-        return bool(pd.isna(value))
+        return bool(_isna(value))
     except (TypeError, ValueError):
         return False
 
