@@ -133,10 +133,3 @@ listenr finetune --batch-size 2 --grad-accum 8 --bf16
 
 The effective batch size is `batch_size × grad_accum`. Keeping that product the
 same (e.g. `8×2 = 16` → `2×8 = 16`) preserves training dynamics.
-
-### `pip install` ignores `requires-python` warning
-
-The `rocm/pytorch` image ships Python 3.12; listenr requires `>=3.13`. The
-codebase uses no 3.13-specific syntax — the `--ignore-requires-python` flag
-is safe here. If a future change introduces 3.13-only syntax, update the
-`FROM` line in `Dockerfile` to a newer base image.

@@ -5,9 +5,35 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "listenr"
 dynamic = ["version"]
-description = "Real-time microphone transcription via Lemonade ASR"
+description = "Record speech, clean it up with local AI, and fine-tune your own ASR model"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
+license = "MPL-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Rebreda" }]
+keywords = [
+    "asr",
+    "speech-to-text",
+    "whisper",
+    "fine-tuning",
+    "lora",
+    "lemonade",
+    "local-ai",
+    "transcription",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "requests",
     "websockets",
@@ -15,20 +41,22 @@ dependencies = [
     "soundfile",
     "numpy",
     "scipy",
-    "pandas",
     "pydantic-settings>=2.6",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pandas",  # the importer tests build DataFrames
 ]
 mdc = [
     "datacollective>=0.5.2",
+    "pandas",
     "python-dotenv",
 ]
 hf = [
     "datasets",
+    "pandas",
     "python-dotenv",
 ]
 categorize = [
@@ -43,6 +71,12 @@ finetune = [
     "jiwer",
     "tensorboard",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Rebreda/listenr"
+Repository = "https://github.com/Rebreda/listenr"
+Issues = "https://github.com/Rebreda/listenr/issues"
+Documentation = "https://github.com/Rebreda/listenr/tree/main/docs"
 
 [project.scripts]
 listenr = "listenr.main:main"

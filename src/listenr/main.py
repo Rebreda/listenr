@@ -10,6 +10,16 @@ import importlib
 import importlib.metadata
 import sys
 
+# command -> pip extra that supplies its heavy dependencies
+EXTRAS: dict[str, str] = {
+    "categorize": "categorize",
+    "import-mdc": "mdc",
+    "import-hf": "hf",
+    "finetune": "finetune",
+    "merge": "finetune",
+    "eval": "finetune",
+}
+
 # command -> (module exposing main(), one-line help)
 COMMANDS: dict[str, tuple[str, str]] = {
     "record": ("listenr.cli", "Record from the microphone with live transcription"),
@@ -64,7 +74,18 @@ def main() -> int | None:
         return 2
 
     module_name, _ = COMMANDS[command]
-    module = importlib.import_module(module_name)
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        extra = EXTRAS.get(command)
+        if extra is None:
+            raise
+        print(
+            f"listenr: '{command}' needs the '{extra}' extra, which is not installed "
+            f"({exc}).\n  uv pip install 'listenr[{extra}]'",
+            file=sys.stderr,
+        )
+        return 1
     # Subcommand modules parse sys.argv themselves; rewrite it so their
     # argparse help shows "listenr <command>" as the program name.
     sys.argv = [f"listenr {command}", *argv[1:]]

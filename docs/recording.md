@@ -10,16 +10,16 @@ utterance as a `.wav` clip.
 
 ```bash
 # Record and save everything (default)
-uv run listenr record
+listenr record
 
 # Print transcriptions only — nothing saved to disk
-uv run listenr record --no-save
+listenr record --no-save
 
 # Also print the raw Whisper output before LLM correction
-uv run listenr record --show-raw
+listenr record --show-raw
 
 # Verbose debug output (WebSocket messages, mic RMS, etc.)
-uv run listenr record --debug
+listenr record --debug
 ```
 
 Press **Ctrl+C** to stop. Listenr will unload all models from Lemonade before exiting.

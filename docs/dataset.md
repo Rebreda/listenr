@@ -9,25 +9,25 @@ in CSV and/or HuggingFace datasets format, ready to pass to `listenr finetune`.
 
 ```bash
 # Default: 80/10/10 CSV splits → ~/listenr_dataset/
-uv run listenr build-dataset
+listenr build-dataset
 
 # Custom output directory and split ratio
-uv run listenr build-dataset --output ~/my_dataset --split 90/5/5
+listenr build-dataset --output ~/my_dataset --split 90/5/5
 
 # Exclude very short or sparse clips
-uv run listenr build-dataset --min-duration 1.0 --min-chars 10
+listenr build-dataset --min-duration 1.0 --min-chars 10
 
 # HuggingFace datasets format (required for listenr finetune)
-uv run listenr build-dataset --format hf
+listenr build-dataset --format hf
 
 # Both CSV and HF at once
-uv run listenr build-dataset --format both
+listenr build-dataset --format both
 
 # Preview stats without writing anything
-uv run listenr build-dataset --dry-run
+listenr build-dataset --dry-run
 
 # Combine your local manifest with an imported MDC manifest
-uv run listenr build-dataset \
+listenr build-dataset \
     --manifest ~/.listenr/audio_clips/manifest.jsonl \
     --manifest ~/.listenr/audio_clips/imports/mdc/<dataset-id>/manifest.jsonl \
     --format hf
@@ -129,10 +129,10 @@ The key is read from the environment; a gitignored `.env` in the repo root is
 loaded automatically if present.
 
 ```bash
-uv pip install -e .[mdc]
+uv pip install "listenr[mdc]"
 export MDC_API_KEY=your-api-key-here   # or put MDC_API_KEY=... in .env
 
-uv run listenr import-mdc <dataset-id>
+listenr import-mdc <dataset-id>
 # -> ~/.listenr/audio_clips/imports/mdc/<dataset-id>/manifest.jsonl
 ```
 
@@ -143,9 +143,9 @@ to a WAV under the import's `audio/` directory. Defaults target Common
 Voice-style datasets (`audio` + `sentence`).
 
 ```bash
-uv pip install -e .[hf]
+uv pip install "listenr[hf]"
 
-uv run listenr import-hf mozilla-foundation/common_voice_17_0 --config en --split train
+listenr import-hf mozilla-foundation/common_voice_17_0 --config en --split train
 # -> ~/.listenr/audio_clips/imports/hf/mozilla-foundation__common_voice_17_0/manifest.jsonl
 ```
 
@@ -154,7 +154,7 @@ uv run listenr import-hf mozilla-foundation/common_voice_17_0 --config en --spli
 Use an imported manifest alone, or combine it with your own recordings:
 
 ```bash
-uv run listenr build-dataset \
+listenr build-dataset \
     --manifest ~/.listenr/audio_clips/manifest.jsonl \
     --manifest ~/.listenr/audio_clips/imports/mdc/<dataset-id>/manifest.jsonl \
     --format hf
@@ -174,20 +174,20 @@ so it feeds straight into `listenr build-dataset`. The input manifest is never
 modified.
 
 ```bash
-uv pip install -e .[categorize]
+uv pip install "listenr[categorize]"
 
 # Tune the threshold first with --dry-run (prints match count + top hits):
-uv run listenr categorize <input>/manifest.jsonl \
+listenr categorize <input>/manifest.jsonl \
     --topic "technology" --topic "artificial intelligence" --topic "software" \
     --threshold 0.35 --dry-run
 
 # Then write the filtered manifest:
-uv run listenr categorize <input>/manifest.jsonl \
+listenr categorize <input>/manifest.jsonl \
     --topics-file topics.txt \
     --threshold 0.35 \
     --output ~/.listenr/audio_clips/imports/tech_only.jsonl
 
-uv run listenr build-dataset --manifest ~/.listenr/audio_clips/imports/tech_only.jsonl --format hf
+listenr build-dataset --manifest ~/.listenr/audio_clips/imports/tech_only.jsonl --format hf
 ```
 
 Topics can be given inline (repeat `--topic`) or one-per-line via `--topics-file`.

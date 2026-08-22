@@ -14,18 +14,35 @@
 ## Install
 
 ```bash
-git clone https://github.com/Rebreda/listenr
-cd listenr
-uv pip install -e .
+uv tool install listenr   # or: pipx install listenr
 ```
 
-### Optional: fine-tuning dependencies
-
-Only needed if you plan to run `listenr finetune`. Requires PyTorch.
+Python 3.11 or newer. To work on Listenr itself, clone the repo and install it
+editable instead:
 
 ```bash
-uv pip install -e ".[finetune]"
+git clone https://github.com/Rebreda/listenr
+cd listenr
+uv pip install -e ".[dev]"
 ```
+
+### Optional extras
+
+The core install covers recording, transcription, and dataset building. Each
+of the heavier commands lives behind an extra:
+
+| Extra | Enables | Pulls in |
+|---|---|---|
+| `finetune` | `listenr finetune`, `merge`, `eval` | transformers, peft, accelerate |
+| `mdc` | `listenr import-mdc` | datacollective, pandas |
+| `hf` | `listenr import-hf` | datasets, pandas |
+| `categorize` | `listenr categorize` | sentence-transformers |
+
+```bash
+uv pip install "listenr[finetune]"
+```
+
+Running a command without its extra prints the exact install line you need.
 
 > For AMD GPU fine-tuning, use the ROCm container instead  - see [finetune-amd.md](finetune-amd.md).
 
@@ -34,9 +51,9 @@ uv pip install -e ".[finetune]"
 ## Run without activating the venv
 
 ```bash
-uv run listenr record
-uv run listenr build-dataset
-uv run listenr finetune
+listenr record
+listenr build-dataset
+listenr finetune
 ```
 
 Run `listenr --help` to list all commands; each command has its own `--help`.

@@ -1,7 +1,7 @@
 
 <div align="center">
 
-<img src="assets/images/logo.png" alt="Listenr Logo" width="64">
+<img src="https://raw.githubusercontent.com/Rebreda/listenr/main/assets/images/logo.png" alt="Listenr Logo" width="64">
 
 # Listenr
 
@@ -10,11 +10,11 @@
 Record your voice. Clean it up with local AI. Fine-tune a Whisper model. Deploy something that's actually yours.
 
 <a href="https://quickthoughts.ca/posts/listenr-asr-training-data-problem/">Walkthrough</a> &nbsp;|&nbsp;
-<a href="docs/setup.md">Setup</a> &nbsp;|&nbsp;
-<a href="docs/configuration.md">Configuration</a> &nbsp;|&nbsp;
-<a href="docs/recording.md">Recording</a> &nbsp;|&nbsp;
-<a href="docs/dataset.md">Dataset</a> &nbsp;|&nbsp;
-<a href="docs/troubleshooting.md">Troubleshooting</a>
+<a href="https://github.com/Rebreda/listenr/blob/main/docs/setup.md">Setup</a> &nbsp;|&nbsp;
+<a href="https://github.com/Rebreda/listenr/blob/main/docs/configuration.md">Configuration</a> &nbsp;|&nbsp;
+<a href="https://github.com/Rebreda/listenr/blob/main/docs/recording.md">Recording</a> &nbsp;|&nbsp;
+<a href="https://github.com/Rebreda/listenr/blob/main/docs/dataset.md">Dataset</a> &nbsp;|&nbsp;
+<a href="https://github.com/Rebreda/listenr/blob/main/docs/troubleshooting.md">Troubleshooting</a>
 
 <a href="https://lemonade-server.ai" target="_blank" rel="noopener">
   <img
@@ -29,7 +29,7 @@ Record your voice. Clean it up with local AI. Fine-tune a Whisper model. Deploy 
 
 ---
 
-![Listenr CLI streaming - example output](assets/images/screenshot.png)
+![Listenr CLI streaming - example output](https://raw.githubusercontent.com/Rebreda/listenr/main/assets/images/screenshot.png)
 
 ## How it works
 
@@ -54,16 +54,16 @@ lemonade pull gpt-oss-20b-mxfp4-GGUF
 
 **Install Listenr and start recording:**
 ```bash
-git clone https://github.com/Rebreda/listenr
-cd listenr
-uv pip install -e .
-uv run listenr record   # start recording
+uv tool install listenr   # or: pipx install listenr
+listenr record            # start recording
 ```
+
+Working on Listenr itself? Clone the repo and `uv pip install -e ".[dev]"` instead.
 
 **Once you have recordings, process & fine-tune:**
 ```bash
 # Build train/dev/test splits from your manifest
-uv run listenr build-dataset --format hf
+listenr build-dataset --format hf
 
 # Fine-tune Whisper (see docs/finetune-amd.md for AMD GPUs)
 podman compose run --rm finetune
@@ -72,16 +72,16 @@ podman compose run --rm finetune
 podman compose run --rm merge
 
 # Evaluate it on the held-out test split
-uv run listenr eval --compare-base --keyword YourDomainWord
+listenr eval --compare-base --keyword YourDomainWord
 ```
 
-See [docs/setup.md](docs/setup.md) for full installation details.
+See [docs/setup.md](https://github.com/Rebreda/listenr/blob/main/docs/setup.md) for full installation details.
 
 If you want to mix in an external ASR dataset, use the optional importers to
 write a separate Listenr-compatible manifest — `listenr import-mdc <dataset-id>`
 (Mozilla Data Collective) or `listenr import-hf <dataset-id>` (Hugging Face) —
 then pass that manifest to `listenr build-dataset` alongside your normal one.
-See [docs/dataset.md](docs/dataset.md) for details.
+See [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.md) for details.
 
 ## Under the hood
 
@@ -97,12 +97,12 @@ See [docs/dataset.md](docs/dataset.md) for details.
 
 | Guide | Description |
 |---|---|
-| [docs/setup.md](docs/setup.md) | Installation, Lemonade Server, microphone setup |
-| [docs/configuration.md](docs/configuration.md) | Full `config.toml` reference, VAD tuning, available models |
-| [docs/recording.md](docs/recording.md) | CLI usage, how recording works, batch transcription |
-| [docs/dataset.md](docs/dataset.md) | Building train/dev/test splits, CSV and HF formats, and the optional Mozilla Data Collective import |
-| [docs/finetune-amd.md](docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |
-| [docs/troubleshooting.md](docs/troubleshooting.md) | Common errors and fixes |
+| [docs/setup.md](https://github.com/Rebreda/listenr/blob/main/docs/setup.md) | Installation, Lemonade Server, microphone setup |
+| [docs/configuration.md](https://github.com/Rebreda/listenr/blob/main/docs/configuration.md) | Full `config.toml` reference, VAD tuning, available models |
+| [docs/recording.md](https://github.com/Rebreda/listenr/blob/main/docs/recording.md) | CLI usage, how recording works, batch transcription |
+| [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.md) | Building train/dev/test splits, CSV and HF formats, and the optional Mozilla Data Collective import |
+| [docs/finetune-amd.md](https://github.com/Rebreda/listenr/blob/main/docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |
+| [docs/troubleshooting.md](https://github.com/Rebreda/listenr/blob/main/docs/troubleshooting.md) | Common errors and fixes |
 
 ## Acknowledgments
 
