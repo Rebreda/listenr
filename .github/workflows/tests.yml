@@ -5,6 +5,9 @@ on:
     branches: ["**"]
   pull_request:
     branches: ["**"]
+  # Lets the release workflow gate a publish on this same matrix instead of
+  # duplicating it.
+  workflow_call:
 
 jobs:
   test:

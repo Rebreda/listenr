@@ -1,22 +1,39 @@
 name: Release
 
 # Publish to PyPI and create a GitHub Release when a v* tag is pushed:
-#   git tag v0.2.0 && git push origin v0.2.0
-# PyPI auth uses trusted publishing (OIDC) — register this repo + workflow
-# under the project's "Publishing" settings on pypi.org; no token needed.
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# To rehearse the whole pipeline without touching PyPI, run this workflow
+# manually from the Actions tab. A manual run always goes to TestPyPI; only a
+# tag can publish to PyPI, so a dispatch off a branch cannot put a .dev
+# version on the real index.
+#
+# Auth uses trusted publishing (OIDC), so no API token is stored here.
+# See docs/releasing.md for the one-time setup on pypi.org.
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+
+# Grant the minimum by default; jobs widen it only where they must.
+permissions:
+  contents: read
+
+# A publish is not safe to interrupt halfway.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    environment: pypi
-    permissions:
-      id-token: write # PyPI trusted publishing
-      contents: write # create the GitHub Release
+  # A tag must not publish code that does not pass. Reuses the same matrix
+  # the PR checks run rather than keeping a second copy of it.
+  test:
+    uses: ./.github/workflows/tests.yml
 
+  build:
+    needs: test
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,11 +46,77 @@ jobs:
 
       - name: Build sdist and wheel
         run: |
-          python -m pip install build
+          python -m pip install --upgrade build twine
           python -m build
 
-      - name: Publish to PyPI
+      - name: Check package metadata
+        # Catches a long_description PyPI would reject, before upload.
+        run: python -m twine check --strict dist/*
+
+      - name: Check the built version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          wheel=$(printf '%s\n' dist/*.whl | head -1)
+          built=${wheel#dist/listenr-}
+          built=${built%%-*}
+          tagged=${GITHUB_REF_NAME#v}
+          echo "built=$built tagged=$tagged"
+          if [ "$built" != "$tagged" ]; then
+            echo "::error::Built version $built does not match tag $GITHUB_REF_NAME."
+            echo "A .dev or +dirty suffix usually means the tag is not on this commit."
+            exit 1
+          fi
+
+      - name: Install the wheel and smoke-test the CLI
+        # A wheel that imports on the build machine can still be missing a
+        # dependency or an entry point. Install it clean and run it.
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          /tmp/smoke/bin/listenr --version
+          /tmp/smoke/bin/listenr --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # The environment name must match the one registered on the index's
+    # trusted publisher, or the OIDC claim is rejected.
+    environment:
+      name: ${{ startsWith(github.ref, 'refs/tags/v') && 'pypi' || 'testpypi' }}
+      url: ${{ startsWith(github.ref, 'refs/tags/v') && 'https://pypi.org/project/listenr/' || 'https://test.pypi.org/project/listenr/' }}
+    permissions:
+      contents: read
+      id-token: write # trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Empty means the default, which is PyPI.
+          repository-url: ${{ startsWith(github.ref, 'refs/tags/v') && '' || 'https://test.pypi.org/legacy/' }}
+
+  github-release:
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
 
       - name: Create GitHub Release
         env:
