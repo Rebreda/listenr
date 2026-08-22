@@ -46,9 +46,10 @@ format = "csv"          # csv | hf | both
 strip_tags = true       # strip noise tags like (music)
 
 [finetune]
+# openai/whisper-* or UsefulSensors/moonshine-*
 base_model = "openai/whisper-small"
-language = "english"
-task = "transcribe"     # transcribe | translate
+language = "english"    # Whisper only; Moonshine is English-only
+task = "transcribe"     # transcribe | translate (Whisper only)
 lora_r = 8
 lora_alpha = 32
 lora_dropout = 0.1

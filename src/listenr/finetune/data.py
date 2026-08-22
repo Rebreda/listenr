@@ -1,19 +1,23 @@
 """
-data.py — Dataset preparation for Whisper LoRA fine-tuning.
+data.py — Dataset preparation for speech seq2seq LoRA fine-tuning.
+
+Covers every family in :mod:`listenr.finetune.architectures` (Whisper,
+Moonshine). The architecture only decides which tensor the encoder wants and
+whether it needs padding; the rest of the path is shared.
 
 All functions are pure (no global state, no side effects) to keep them
 easy to test and reuse.
 
 Requires the ``finetune`` optional dependencies::
 
-    uv pip install -e ".[finetune]"
+    uv pip install "listenr[finetune]"
 
 Public API
 ----------
-make_processor(model_id, language, task)  -> WhisperProcessor
-prepare_example(batch, processor)         -> dict with input_features + labels
+make_processor(model_id, language, task)  -> processor for the detected family
+prepare_example(batch, processor, ...)    -> dict with encoder input + labels
 make_dataset(hf_dataset_path, processor)  -> DatasetDict with train/dev/test
-WhisperDataCollator                       -> dataclass, handles per-batch padding
+SpeechDataCollator                        -> dataclass, handles per-batch padding
 """
 
 from __future__ import annotations
@@ -23,38 +27,105 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from listenr.finetune.architectures import Architecture, detect
+
 if TYPE_CHECKING:
-    from transformers import WhisperProcessor  # noqa: F401
+    from transformers import ProcessorMixin  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
 # Processor
 # ---------------------------------------------------------------------------
 
-def make_processor(model_id: str, language: str, task: str) -> "WhisperProcessor":
-    """Load the WhisperProcessor (feature extractor + tokenizer) from *model_id*.
+def make_processor(
+    model_id: str,
+    language: str,
+    task: str,
+    architecture: Architecture | None = None,
+) -> "ProcessorMixin":
+    """Load the processor (feature extractor + tokenizer) for *model_id*.
 
     Parameters
     ----------
     model_id:
-        HuggingFace Hub identifier, e.g. ``"openai/whisper-small"``.
+        HuggingFace Hub identifier, e.g. ``"openai/whisper-small"`` or
+        ``"UsefulSensors/moonshine-base"``.
     language:
         Target language, e.g. ``"english"``.  Passed to the tokenizer so the
-        correct language token is prepended during encoding.
+        correct language token is prepended during encoding.  Ignored by
+        English-only families such as Moonshine.
     task:
-        ``"transcribe"`` (default) or ``"translate"``.
+        ``"transcribe"`` (default) or ``"translate"``.  Ignored as above.
+    architecture:
+        Detected from *model_id* when omitted.
     """
     try:
-        from transformers import WhisperProcessor as _WhisperProcessor
+        from transformers import AutoProcessor
     except ImportError:
         print(
             "ERROR: transformers is required. Install with:\n"
-            "  uv pip install -e \".[finetune]\"",
+            "  uv pip install \"listenr[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    return _WhisperProcessor.from_pretrained(model_id, language=language, task=task)
+    arch = architecture or detect(model_id)
+    if arch.supports_language_and_task:
+        processor = AutoProcessor.from_pretrained(model_id, language=language, task=task)
+    else:
+        processor = AutoProcessor.from_pretrained(model_id)
+
+    _ensure_pad_token(processor, model_id)
+    return processor
+
+
+def _ensure_pad_token(processor: Any, model_id: str) -> None:
+    """Give the tokenizer a pad token when the checkpoint ships without one.
+
+    The collator pads labels to the longest sequence in the batch, and
+    ``tokenizer.pad`` refuses to run without a pad token. Whisper's tokenizer
+    has one. Moonshine's exposes no special tokens at all, but its model
+    config names a ``pad_token_id``, so read the token back from there.
+
+    Reusing EOS as padding is safe here: the collator replaces padding
+    positions with -100 before the loss sees them.
+    """
+    tokenizer = getattr(processor, "tokenizer", None)
+    if tokenizer is None or getattr(tokenizer, "pad_token", None) is not None:
+        return
+
+    pad_token = getattr(tokenizer, "eos_token", None) or _pad_token_from_config(
+        model_id, tokenizer
+    )
+    if pad_token is not None:
+        tokenizer.pad_token = pad_token
+
+
+def _load_config(model_id: str) -> Any:
+    """Return the checkpoint config, or None when it cannot be read."""
+    try:
+        from transformers import AutoConfig
+
+        return AutoConfig.from_pretrained(model_id)
+    except Exception:
+        return None
+
+
+def _pad_token_from_config(model_id: str, tokenizer: Any) -> str | None:
+    """Resolve a pad token string from the checkpoint config's token ids."""
+    config = _load_config(model_id)
+    if config is None:
+        return None
+
+    for attr in ("pad_token_id", "eos_token_id"):
+        token_id = getattr(config, attr, None)
+        if token_id is None:
+            continue
+        try:
+            return tokenizer.convert_ids_to_tokens(token_id)
+        except Exception:
+            continue
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +156,11 @@ def _resample(array: Any, orig_sr: int, target_sr: int) -> Any:
     return resample_poly(array, up, down).astype("float32")
 
 
-def prepare_example(batch: dict, processor: Any) -> dict:
+def prepare_example(
+    batch: dict,
+    processor: Any,
+    feature_key: str = "input_features",
+) -> dict:
     """Convert a single dataset example into model-ready tensors.
 
     Expects the dataset to have been created by ``listenr build-dataset --format hf``
@@ -100,9 +175,10 @@ def prepare_example(batch: dict, processor: Any) -> dict:
 
     Returns a dict with:
 
-    ``input_features``
-        Log-Mel spectrogram, shape ``(80, 3000)``, as produced by the Whisper
-        feature extractor.
+    *feature_key*
+        Whatever the family's encoder consumes: ``input_features`` (Whisper's
+        log-Mel spectrogram, shape ``(80, 3000)``) or ``input_values``
+        (Moonshine's raw waveform, variable length).
     ``labels``
         Token ids for ``corrected_transcription``.
     """
@@ -119,43 +195,44 @@ def prepare_example(batch: dict, processor: Any) -> dict:
         array = audio["array"]
         sample_rate = audio["sampling_rate"]
 
-    # Whisper is fixed at 16 kHz; fall back to that when the extractor doesn't
-    # report a real rate (e.g. mocked processors in tests).
+    # Every supported family is fixed at 16 kHz; fall back to that when the
+    # extractor doesn't report a real rate (e.g. mocked processors in tests).
     target_sr = getattr(processor.feature_extractor, "sampling_rate", None)
     if not isinstance(target_sr, int):
         target_sr = DEFAULT_TARGET_SAMPLE_RATE
 
     array = _resample(array, sample_rate, target_sr)
 
-    input_features = processor.feature_extractor(
-        array,
-        sampling_rate=target_sr,
-    ).input_features[0]
+    extracted = processor.feature_extractor(array, sampling_rate=target_sr)
 
     labels = processor.tokenizer(batch["corrected_transcription"]).input_ids
 
-    return {"input_features": input_features, "labels": labels}
+    return {feature_key: getattr(extracted, feature_key)[0], "labels": labels}
 
 
 # ---------------------------------------------------------------------------
 # Dataset loader
 # ---------------------------------------------------------------------------
 
-def make_dataset(hf_dataset_path: Path, processor: Any) -> Any:
+def make_dataset(
+    hf_dataset_path: Path,
+    processor: Any,
+    feature_key: str = "input_features",
+) -> Any:
     """Load the on-disk HuggingFace DatasetDict and apply feature preparation.
 
     *hf_dataset_path* should be the ``hf_dataset/`` subdirectory written by
     ``listenr build-dataset --format hf``.
 
-    The returned DatasetDict has columns ``input_features`` and ``labels``
-    ready for the Trainer.
+    The returned DatasetDict has columns *feature_key* and ``labels`` ready
+    for the Trainer.
     """
     try:
         from datasets import load_from_disk
     except ImportError:
         print(
             "ERROR: datasets is required. Install with:\n"
-            "  uv pip install -e \".[finetune]\"",
+            "  uv pip install \"listenr[finetune]\"",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -168,7 +245,7 @@ def make_dataset(hf_dataset_path: Path, processor: Any) -> Any:
     cols_to_remove = list(next(iter(raw_columns.values())) if isinstance(raw_columns, dict) else raw_columns)
 
     dataset = dataset.map(
-        lambda batch: prepare_example(batch, processor),
+        lambda batch: prepare_example(batch, processor, feature_key),
         remove_columns=cols_to_remove,
     )
     return dataset
@@ -179,21 +256,26 @@ def make_dataset(hf_dataset_path: Path, processor: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 @dataclass
-class WhisperDataCollator:
+class SpeechDataCollator:
     """Collate a list of ``prepare_example`` outputs into a padded batch.
 
-    Handles the two-part padding requirement of Whisper:
+    Handles the two-part padding requirement of an encoder-decoder ASR model:
 
-    * ``input_features`` — already fixed-size (80 × 3000); just stack into
-      a tensor.
+    * The encoder input, named by *feature_key*.  Whisper's feature extractor
+      has already padded every clip to a fixed 80 × 3000 window, so the batch
+      only needs stacking.  Moonshine keeps clips at their natural length, so
+      set *pad_features* to pad to the longest clip in the batch and emit the
+      ``attention_mask`` its encoder expects.
     * ``labels`` — variable-length; pad to the longest sequence in the batch
       and replace padding positions with ``-100`` so they are ignored by the
-      cross-entropy loss.  The BOS token is trimmed if present (Whisper's
-      Trainer appends it automatically).
+      cross-entropy loss.  The BOS token is trimmed if present (the Trainer
+      appends it automatically).
     """
 
     processor: Any
     decoder_start_token_id: int
+    feature_key: str = "input_features"
+    pad_features: bool = False
 
     def __call__(self, features: list[dict]) -> dict:
         try:
@@ -201,14 +283,17 @@ class WhisperDataCollator:
         except ImportError:
             print(
                 "ERROR: torch is required. Install with:\n"
-                "  uv pip install -e \".[finetune]\"",
+                "  uv pip install \"listenr[finetune]\"",
                 file=sys.stderr,
             )
             sys.exit(1)
 
-        # --- input features (fixed size → just convert to tensors) ---
-        input_batch = [{"input_features": f["input_features"]} for f in features]
-        batch = self.processor.feature_extractor.pad(input_batch, return_tensors="pt")
+        # --- encoder input ---
+        input_batch = [{self.feature_key: f[self.feature_key]} for f in features]
+        pad_kwargs: dict[str, Any] = {"return_tensors": "pt"}
+        if self.pad_features:
+            pad_kwargs.update(padding="longest", return_attention_mask=True)
+        batch = self.processor.feature_extractor.pad(input_batch, **pad_kwargs)
 
         # --- labels (variable length → pad + mask) ---
         label_batch = [{"input_ids": f["labels"]} for f in features]
@@ -223,3 +308,7 @@ class WhisperDataCollator:
 
         batch["labels"] = labels
         return batch
+
+
+#: Historical name kept so existing configs and imports keep working.
+WhisperDataCollator = SpeechDataCollator

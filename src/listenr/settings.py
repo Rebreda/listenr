@@ -107,7 +107,11 @@ class DatasetSettings(BaseModel):
 
 
 class FinetuneSettings(BaseModel):
+    # Any encoder-decoder ASR checkpoint listenr knows how to fine-tune:
+    # openai/whisper-* or UsefulSensors/moonshine-*.
     base_model: str = "openai/whisper-small"
+    # language and task are Whisper-only; Moonshine is English-only and
+    # ignores both.
     language: str = "english"
     task: Literal["transcribe", "translate"] = "transcribe"
     lora_r: int = 8
