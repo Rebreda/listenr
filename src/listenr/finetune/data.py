@@ -101,13 +101,20 @@ def _ensure_pad_token(processor: Any, model_id: str) -> None:
         tokenizer.pad_token = pad_token
 
 
-def _pad_token_from_config(model_id: str, tokenizer: Any) -> str | None:
-    """Resolve a pad token string from the checkpoint config's token ids."""
+def _load_config(model_id: str) -> Any:
+    """Return the checkpoint config, or None when it cannot be read."""
     try:
         from transformers import AutoConfig
 
-        config = AutoConfig.from_pretrained(model_id)
+        return AutoConfig.from_pretrained(model_id)
     except Exception:
+        return None
+
+
+def _pad_token_from_config(model_id: str, tokenizer: Any) -> str | None:
+    """Resolve a pad token string from the checkpoint config's token ids."""
+    config = _load_config(model_id)
+    if config is None:
         return None
 
     for attr in ("pad_token_id", "eos_token_id"):

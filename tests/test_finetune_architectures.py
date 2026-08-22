@@ -41,6 +41,14 @@ class TestArchitectureTable:
 class TestDetect:
     """Detection falls back to the model id when no config can be fetched."""
 
+    @staticmethod
+    def _model_type(monkeypatch, value):
+        """Stub the config lookup. transformers is an optional dependency, so
+        the seam is patched rather than transformers itself."""
+        monkeypatch.setattr(
+            "listenr.finetune.architectures.model_type_of", lambda model_id: value
+        )
+
     @pytest.mark.parametrize(
         "model_id, expected",
         [
@@ -51,37 +59,21 @@ class TestDetect:
         ],
     )
     def test_detects_from_name_without_network(self, model_id, expected, monkeypatch):
-        monkeypatch.setattr(
-            "transformers.AutoConfig.from_pretrained",
-            lambda *a, **k: (_ for _ in ()).throw(OSError("offline")),
-        )
+        self._model_type(monkeypatch, None)
         assert detect(model_id) is expected
 
     def test_config_model_type_wins_over_the_name(self, monkeypatch):
-        class FakeConfig:
-            model_type = "moonshine"
-
-        monkeypatch.setattr(
-            "transformers.AutoConfig.from_pretrained", lambda *a, **k: FakeConfig()
-        )
+        self._model_type(monkeypatch, "moonshine")
         # A local directory name that says nothing about the family.
         assert detect("/tmp/my-merged-model") is MOONSHINE
 
     def test_unsupported_model_type_is_a_clear_error(self, monkeypatch):
-        class FakeConfig:
-            model_type = "wav2vec2"
-
-        monkeypatch.setattr(
-            "transformers.AutoConfig.from_pretrained", lambda *a, **k: FakeConfig()
-        )
+        self._model_type(monkeypatch, "wav2vec2")
         with pytest.raises(UnsupportedArchitecture, match="wav2vec2"):
             detect("facebook/wav2vec2-base")
 
     def test_unrecognisable_name_is_a_clear_error(self, monkeypatch):
-        monkeypatch.setattr(
-            "transformers.AutoConfig.from_pretrained",
-            lambda *a, **k: (_ for _ in ()).throw(OSError("offline")),
-        )
+        self._model_type(monkeypatch, None)
         with pytest.raises(UnsupportedArchitecture, match="moonshine, whisper"):
             detect("some-org/mystery-asr")
 
@@ -247,7 +239,7 @@ class TestPadToken:
             eos_token_id = 2
 
         monkeypatch.setattr(
-            "transformers.AutoConfig.from_pretrained", lambda *a, **k: FakeConfig()
+            "listenr.finetune.data._load_config", lambda model_id: FakeConfig()
         )
         processor = self._processor()
         _ensure_pad_token(processor, "UsefulSensors/moonshine-tiny")
@@ -256,10 +248,7 @@ class TestPadToken:
     def test_no_pad_token_anywhere_is_not_fatal(self, monkeypatch):
         from listenr.finetune.data import _ensure_pad_token
 
-        monkeypatch.setattr(
-            "transformers.AutoConfig.from_pretrained",
-            lambda *a, **k: (_ for _ in ()).throw(OSError("offline")),
-        )
+        monkeypatch.setattr("listenr.finetune.data._load_config", lambda model_id: None)
         processor = self._processor()
         _ensure_pad_token(processor, "some-org/mystery-asr")
         assert processor.tokenizer.pad_token is None

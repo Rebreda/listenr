@@ -27,6 +27,7 @@ Public API
 ----------
 Architecture                  -> frozen dataclass describing one model family
 SUPPORTED                     -> {model_type: Architecture}
+model_type_of(model_id)       -> str | None
 detect(model_id)              -> Architecture
 """
 
@@ -83,21 +84,31 @@ def _from_model_type(model_type: str) -> Architecture:
         ) from None
 
 
+def model_type_of(model_id: str) -> str | None:
+    """Read the checkpoint's ``model_type``, or None when it cannot be read.
+
+    transformers is an optional dependency and the config may be unreachable
+    offline, so both cases return None and leave the caller to fall back.
+    """
+    try:
+        from transformers import AutoConfig
+
+        return AutoConfig.from_pretrained(model_id).model_type
+    except Exception:
+        return None
+
+
 def detect(model_id: str) -> Architecture:
     """Return the :class:`Architecture` for *model_id*.
 
     Resolves the real ``model_type`` from the checkpoint's config, so local
     paths and renamed forks work as well as canonical hub ids. Falls back to
-    matching the id text when the config cannot be read — that keeps the
-    function usable offline and in tests.
+    matching the id text when the config cannot be read, which keeps the
+    function usable without the finetune extras installed.
     """
-    try:
-        from transformers import AutoConfig
-
-        model_type = AutoConfig.from_pretrained(model_id).model_type
-    except Exception:
+    model_type = model_type_of(model_id)
+    if model_type is None:
         return _from_name(model_id)
-
     return _from_model_type(model_type)
 
 
