@@ -33,8 +33,17 @@ customize it.
 
 ## Prerequisites
 
-- AMD GPU with ROCm drivers installed on the host (`rocm-smi` works)
-- Podman (`podman --version`)  - Docker works too with the same flags
+- AMD GPU with the kernel driver loaded, so `/dev/kfd` and `/dev/dri/renderD*`
+  exist. A host ROCm userspace is **not** required: the container ships the
+  whole thing, and `rocm-smi` need not be installed or work on the host.
+- Read and write access to those device nodes. Check with `ls -l /dev/kfd`.
+  If they are `crw-rw----` rather than `crw-rw-rw-`, add yourself to the
+  owning group (usually `render`) and log back in:
+  `sudo usermod -aG render $USER`. The compose file passes your existing
+  groups through with `keep-groups`, which cannot grant a group you are not
+  already in.
+- Podman (`podman --version`). Docker will **not** work with this compose
+  file: `userns_mode: keep-id` and `group_add: keep-groups` are podman-only.
 - ~50 GB free disk space (image + model cache + audio data + checkpoints)
 - Recordings collected on the host via `listenr record` ([recording.md](recording.md))
 
@@ -198,7 +207,7 @@ Output (~926 MB for whisper-small):
 | Flag | Default | Description |
 |---|---|---|
 | `--adapter PATH` | `~/listenr_finetune` | LoRA adapter directory |
-| `--output PATH` | `~/listenr_merged` | Destination for the merged model |
+| `--output PATH` | `~/listenr_finetune_merged` | Destination for the merged model. The compose flow overrides this to `/data/merged`, which is `$LISTENR_HOST_MERGED` on the host. |
 | `--dry-run` | off | Validate inputs and print plan without writing |
 
 ---
@@ -206,6 +215,11 @@ Output (~926 MB for whisper-small):
 ## 6. Evaluate
 
 ```bash
+# In the container, which is where the ROCm torch lives
+podman compose run --rm eval --compare-base
+podman compose run --rm eval --compare-base --keyword Claude --n 50
+
+# Or on the host, if you installed a ROCm torch there
 # Compare original vs fine-tuned on a single file
 listenr eval --audio path/to/clip.wav
 
@@ -268,7 +282,8 @@ print(asr("recording.wav")["text"])
 ### Selecting a GPU
 
 ```bash
-rocm-smi                              # list GPUs
+# rocm-smi lives in the image, so run it there rather than on the host
+podman compose run --rm --entrypoint rocm-smi finetune
 HIP_VISIBLE_DEVICES=1 podman compose run --rm finetune    # pin to GPU 1
 ```
 
@@ -287,11 +302,16 @@ Where it is still needed, uncomment the relevant line in `.env`:
 ```
 HSA_OVERRIDE_GFX_VERSION=10.3.0   # RX 6000 series (RDNA2, gfx103x)
 HSA_OVERRIDE_GFX_VERSION=11.0.0   # RDNA3 cards ROCm does not list natively
-HSA_OVERRIDE_GFX_VERSION=11.5.1   # Strix Halo APUs (gfx1151), if needed
+HSA_OVERRIDE_GFX_VERSION=11.0.0   # Strix Halo APUs (gfx1151), if needed
 ```
 
 > **Never** set `HSA_OVERRIDE_GFX_VERSION=""`  - an empty string is not
 > the same as unset and will crash ROCm at startup.
+
+> The value names the ISA you want to be treated as, not the one you have.
+> Setting a gfx1151 part to `11.5.1` is a no-op, because 11.5.1 is gfx1151.
+> `11.0.0` is the useful value there: it asks for gfx1100, which is what the
+> ROCm wheels are actually built for.
 
 ### APUs with unified memory (Strix Halo / Ryzen AI MAX)
 

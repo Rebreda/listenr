@@ -201,6 +201,29 @@ class _DotEnvSource(_IgnoreSectionVars, DotEnvSettingsSource):
     pass
 
 
+def _warn_about_stale_ini(toml_file: Path) -> None:
+    """Say something when a config.ini sits next to a missing config.toml.
+
+    Listenr used to read INI. It now reads TOML only, so an INI left in place
+    is inert: every value in it is ignored and the defaults win. That failure
+    is completely silent, and it is worse than a missing file because the user
+    believes they have configured something. It cost one user months of
+    talking to the wrong Lemonade port.
+    """
+    if toml_file.exists():
+        return
+    legacy = toml_file.with_name("config.ini")
+    if not legacy.exists():
+        return
+    warnings.warn(
+        f"Found {legacy} but no {toml_file}. Listenr reads TOML only, so every "
+        f"value in that file is being ignored and defaults are in use. Port it "
+        f"to {toml_file.name}; examples/config.toml is the template.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="LISTENR_",
@@ -229,6 +252,7 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         toml_file = Path(os.environ.get("LISTENR_CONFIG", CONFIG_FILE))
+        _warn_about_stale_ini(toml_file)
         return (
             init_settings,
             _EnvSource(settings_cls),
