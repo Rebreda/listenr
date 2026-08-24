@@ -32,7 +32,7 @@ from collections import Counter
 from pathlib import Path
 
 from listenr.settings import settings
-from listenr.transcript_utils import implausible_speech_rate, strip_noise_tags
+from listenr.transcript_utils import speech_rate_mismatch, strip_noise_tags
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("listenr.build_dataset")
@@ -160,13 +160,13 @@ def validate_entry(
     # segments. Such a row teaches the model to emit a full sentence from near
     # silence, which is how you train a hallucinator, and nothing else here
     # would catch it: both halves are individually valid.
-    rate = implausible_speech_rate(raw, duration)
-    if rate is not None:
+    mismatch = speech_rate_mismatch(raw, duration)
+    if mismatch is not None:
+        rate, why = mismatch
         logger.debug(
-            f"Skipping {data['uuid']}: {rate:.0f} words/s over {duration:.3f}s "
-            "means the audio and transcript do not match"
+            f"Skipping {data['uuid']}: {rate:.2f} words/s over {duration:.3f}s, {why}"
         )
-        _drop("audio and transcript do not match (impossible speech rate)")
+        _drop(f"audio and transcript do not match ({why})")
         return None
 
     return {

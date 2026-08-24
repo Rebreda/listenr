@@ -26,7 +26,7 @@ from scipy.signal import resample_poly
 
 from listenr.unified_asr import LemonadeUnifiedASR
 from listenr.llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
-from listenr.transcript_utils import implausible_speech_rate, is_hallucination, strip_noise_tags
+from listenr.transcript_utils import is_hallucination, speech_rate_mismatch, strip_noise_tags
 from listenr.storage import save_recording, patch_manifest_record
 from listenr.retranscribe import retranscribe_clip
 from listenr.settings import ASR_RATE, settings
@@ -263,14 +263,14 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                         is_improved=is_improved,
                         categories=categories,
                     )
-                    rate = implausible_speech_rate(raw_text, record["duration_s"])
-                    if rate is not None:
+                    mismatch = speech_rate_mismatch(raw_text, record["duration_s"])
+                    if mismatch is not None:
+                        rate, why = mismatch
                         print(
-                            f"  WARNING: {record['audio_path']} pairs "
-                            f"{len(raw_text.split())} words with "
-                            f"{record['duration_s']}s ({rate:.0f} words/s). The "
-                            f"audio and transcript probably came from different "
-                            f"segments; build-dataset will drop this clip.",
+                            f"  WARNING: {len(raw_text.split())} words over "
+                            f"{record['duration_s']}s is {rate:.2f} words/s, "
+                            f"which means the {why}. build-dataset will drop "
+                            f"this clip.",
                             flush=True,
                         )
                     print(f"  [SAVED] {record['audio_path']} ({record['duration_s']}s)")

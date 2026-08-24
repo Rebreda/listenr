@@ -112,25 +112,45 @@ def clean_transcript(text: str) -> tuple[str | None, str]:
 
 
 # Fast conversational speech tops out around 5 words per second, and read
-# speech is slower. 8 leaves generous headroom while still catching audio and
-# text that came from different segments.
+# speech is slower, so 8 leaves headroom while still catching a transcript
+# paired with far too little audio.
 MAX_WORDS_PER_SECOND = 8.0
 
+# The other direction. Measured over a real session, word rate ran a median of
+# 2.2 w/s with a 25th percentile of 1.2, so 0.5 is well clear of ordinary
+# speech and still catches 20 seconds of audio labelled "Thank you."
+MIN_WORDS_PER_SECOND = 0.5
 
-def implausible_speech_rate(text: str, duration_s: float) -> float | None:
-    """Return the words-per-second rate when it is physically impossible.
+# Below this, a clip is too short for the rate to mean anything: a one second
+# "Yes" is a legitimate two-word-per-second clip and a legitimate one-word one.
+MIN_RATED_DURATION_S = 2.0
 
-    A transcript can only be paired with the wrong audio silently, because
-    both halves look fine on their own. Rate is the cheap tell: 25 words
-    against 0.085 seconds is 294 words per second, which no speaker produces.
 
-    Returns None when the pairing is plausible, or when there is not enough
-    information to judge.
+def speech_rate_mismatch(text: str, duration_s: float) -> tuple[float, str] | None:
+    """Return ``(rate, reason)`` when the words and the audio cannot both be right.
+
+    Audio and transcript can only diverge silently, because each half looks
+    fine on its own. Word rate is the cheap tell, and it fails in both
+    directions:
+
+    * Too fast means the transcript belongs to different audio. 25 words
+      against 0.085 seconds is 294 words per second, which nobody produces.
+    * Too slow means the audio contains far more speech than the transcript
+      accounts for. 20 seconds labelled "Thank you." is 0.1 words per second,
+      and training on it teaches the model to ignore most of its input.
+
+    Returns None when the pairing is plausible, or when there is not enough to
+    judge.
     """
     if duration_s <= 0:
         return None
     words = len(text.split())
     if words == 0:
         return None
+
     rate = words / duration_s
-    return rate if rate > MAX_WORDS_PER_SECOND else None
+    if rate > MAX_WORDS_PER_SECOND:
+        return rate, "transcript belongs to different audio"
+    if duration_s >= MIN_RATED_DURATION_S and rate < MIN_WORDS_PER_SECOND:
+        return rate, "audio holds far more speech than the transcript"
+    return None

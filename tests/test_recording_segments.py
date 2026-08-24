@@ -16,7 +16,8 @@ import pytest
 
 from listenr.transcript_utils import (
     MAX_WORDS_PER_SECOND,
-    implausible_speech_rate,
+    MIN_WORDS_PER_SECOND,
+    speech_rate_mismatch,
 )
 
 
@@ -115,38 +116,64 @@ class TestForcedCommitOrdering:
         assert len(s.pending) == 16
 
 
-class TestImplausibleSpeechRate:
-    def test_the_real_corrupt_row_is_caught(self):
-        """25 words against 0.085s, straight from the manifest."""
-        text = " ".join(["word"] * 25)
-        rate = implausible_speech_rate(text, 0.085)
-        assert rate is not None
-        assert round(rate) == 294
+class TestSpeechRateMismatch:
+    """Audio and transcript can diverge in both directions, and both are silent."""
 
-    def test_the_other_real_corrupt_row_is_caught(self):
+    def test_the_real_too_fast_row_is_caught(self):
+        """25 words against 0.085s, straight from the manifest."""
+        result = speech_rate_mismatch(" ".join(["word"] * 25), 0.085)
+        assert result is not None
+        rate, why = result
+        assert round(rate) == 294
+        assert "different audio" in why
+
+    def test_the_other_real_too_fast_row_is_caught(self):
         """21 words against 0.342s passed both min_duration and min_chars."""
-        assert implausible_speech_rate(" ".join(["word"] * 21), 0.342) is not None
+        assert speech_rate_mismatch(" ".join(["word"] * 21), 0.342) is not None
+
+    def test_twenty_seconds_labelled_thank_you_is_caught(self):
+        """A real clip: max_segment_s fired and the label covers almost none of it.
+
+        Training on this teaches the model to ignore most of its input, which
+        is as damaging as the too-fast case and was previously invisible.
+        """
+        result = speech_rate_mismatch("Thank you.", 20.063)
+        assert result is not None
+        rate, why = result
+        assert round(rate, 2) == 0.10
+        assert "more speech than the transcript" in why
+
+    def test_one_word_over_twenty_seconds_is_caught(self):
+        assert speech_rate_mismatch("No?", 20.063) is not None
 
     def test_ordinary_speech_passes(self):
-        # 12 words in 4 seconds is 3 w/s, comfortably normal.
-        assert implausible_speech_rate(" ".join(["word"] * 12), 4.0) is None
+        assert speech_rate_mismatch(" ".join(["word"] * 12), 4.0) is None
 
     def test_fast_but_possible_speech_passes(self):
-        assert implausible_speech_rate(" ".join(["word"] * 25), 5.0) is None
+        assert speech_rate_mismatch(" ".join(["word"] * 25), 5.0) is None
 
-    def test_boundary_is_not_flagged(self):
-        assert implausible_speech_rate(" ".join(["word"] * 8), 1.0) is None
+    def test_slow_but_possible_speech_passes(self):
+        """The 25th percentile of a real session was 1.2 w/s."""
+        assert speech_rate_mismatch(" ".join(["word"] * 12), 10.0) is None
+
+    def test_short_clips_are_not_rated(self):
+        """A one second "Yes" is legitimately one word per second."""
+        assert speech_rate_mismatch("Yes", 1.0) is None
+
+    def test_upper_boundary_is_not_flagged(self):
+        assert speech_rate_mismatch(" ".join(["word"] * 8), 1.0) is None
 
     @pytest.mark.parametrize("duration", [0.0, -1.0])
     def test_unknown_duration_is_not_judged(self, duration):
-        assert implausible_speech_rate("some words here", duration) is None
+        assert speech_rate_mismatch("some words here", duration) is None
 
     def test_empty_text_is_not_judged(self):
-        assert implausible_speech_rate("", 0.01) is None
+        assert speech_rate_mismatch("", 0.01) is None
 
-    def test_threshold_is_above_real_human_speech(self):
-        """Fast conversational speech is around 5 w/s; the limit must clear it."""
+    def test_thresholds_bracket_real_human_speech(self):
+        """Fast conversation is around 5 w/s; a slow answer around 1.2."""
         assert MAX_WORDS_PER_SECOND > 5.0
+        assert MIN_WORDS_PER_SECOND < 1.0
 
 
 class TestBuildDatasetRejectsMismatches:
@@ -373,4 +400,4 @@ class TestZeroDurationClips:
 
     def test_rate_check_does_not_pretend_to_judge_zero_duration(self):
         """It returns None rather than dividing by zero; the audio check owns this."""
-        assert implausible_speech_rate("twenty five words here", 0.0) is None
+        assert speech_rate_mismatch("twenty five words here", 0.0) is None
