@@ -232,8 +232,7 @@ listenr eval --compare-base --keyword Claude --keyword Cursor --n 50
 ```
 
 `listenr eval` runs the merged model over the **test split** of the dataset
-written by `listenr build-dataset --format hf` — clips the fine-tune never saw —
-and reports corpus WER against the ground-truth transcriptions. With
+written by `listenr build-dataset --format hf`: clips the fine-tune never saw: and reports corpus WER against the ground-truth transcriptions. With
 `--compare-base`, the base model transcribes the same clips so you can see
 exactly what fine-tuning changed:
 
@@ -248,7 +247,7 @@ exactly what fine-tuning changed:
 
 With `--keyword`, you also get a per-model recall summary across all matching clips:
 ```
-  Keyword recall — fine-tuned
+  Keyword recall: fine-tuned
     Claude                4/5  (80%)  ████░
     Cursor                3/3  (100%) ███
 ```
@@ -292,31 +291,24 @@ can cause imbalance segfaults during training.
 
 ### Unsupported gfx version
 
-Fewer cards need this than they used to. ROCm 7.2 added official support for
-RDNA3 (RX 7900 XTX/XT/GRE, 7800 XT, 7700 XT) and RDNA4 (RX 9070 family, 9060
-family), so on those cards leave the override unset. Try a run without it
-first; only reach for the override if ROCm reports the device as unsupported.
+Most cards do not need this. ROCm 7.2 supports RDNA3 (RX 7900 XTX/XT/GRE,
+7800 XT, 7700 XT), RDNA4 (RX 9070 and 9060 families) and Strix Halo
+(gfx1151) natively. Leave `HSA_OVERRIDE_GFX_VERSION` unset unless ROCm
+reports your device as unsupported.
 
-Strix Halo (gfx1151) needs no override on ROCm 7.2. Measured on a Radeon
-8060S with the 7.2 image: `torch.cuda.get_device_name(0)` returns
-`AMD Radeon Graphics` and the capability is `(11, 5)`, which is gfx1151
-reporting itself correctly. Only set an override if your ROCm is older than
-the support your card needs.
-
-Where it is still needed, uncomment the relevant line in `.env`:
+If you do need it, uncomment the relevant line in `.env`:
 
 ```
 HSA_OVERRIDE_GFX_VERSION=10.3.0   # RX 6000 series (RDNA2, gfx103x)
 HSA_OVERRIDE_GFX_VERSION=11.0.0   # cards your ROCm does not list natively
 ```
 
-> **Never** set `HSA_OVERRIDE_GFX_VERSION=""`  - an empty string is not
-> the same as unset and will crash ROCm at startup.
+The value names the ISA you want to be treated as, not the one you have, so
+`11.0.0` asks to be treated as gfx1100. Setting a card to its own ISA does
+nothing.
 
-> The value names the ISA you want to be treated as, not the one you have.
-> Setting a gfx1151 part to `11.5.1` is a no-op, because 11.5.1 is gfx1151.
-> `11.0.0` asks to be treated as gfx1100. Setting it on ROCm 7.2 does no harm
-> but is not needed, and telling people to set it implies it is required.
+> **Never** set `HSA_OVERRIDE_GFX_VERSION=""`. An empty string is not the
+> same as unset and will crash ROCm at startup.
 
 ### `--ipc=host` is required
 
@@ -327,11 +319,10 @@ sends you looking in the wrong place:
 Memory critical error by agent node-0 ... Reason: Memory in use.
 ```
 
-That appears for any allocation, including a 1024x1024 matmul on an otherwise
-idle GPU. The compose services that touch the GPU already set `ipc: host`, so
+It appears for any allocation, including a trivial one on an idle GPU. The
+compose services that use the GPU already set `ipc: host`, so
 `podman compose run` is unaffected. It matters when you run `podman run` by
-hand. This invocation is verified working on a Radeon 8060S with no sudo, no
-render group, no host ROCm and no gfx override:
+hand:
 
 ```bash
 podman run --rm --device=/dev/kfd --device=/dev/dri --ipc=host \
@@ -341,7 +332,7 @@ podman run --rm --device=/dev/kfd --device=/dev/dri --ipc=host \
 
 ### Why `--bf16` on AMD
 
-Measured on a Radeon 8060S, ROCm 7.2, torch 2.9.1+rocm7.2.0:
+On a Radeon 8060S, ROCm 7.2, torch 2.9.1+rocm7.2.0:
 
 | Precision | Size | Throughput |
 |---|---|---|
@@ -351,8 +342,8 @@ Measured on a Radeon 8060S, ROCm 7.2, torch 2.9.1+rocm7.2.0:
 | bf16 | 4096² | 23.69 TFLOP/s |
 | fp16 | 4096² | 22.90 TFLOP/s |
 
-bf16 is close to ten times fp32 on this part, which is why `--bf16` is the
-default in the compose entrypoint rather than a suggestion.
+bf16 is close to ten times fp32 here, which is why the compose entrypoint
+passes `--bf16` by default. Use `--no-bf16` to turn it off.
 
 ### APUs with unified memory (Strix Halo / Ryzen AI MAX)
 
@@ -380,15 +371,13 @@ Strix Halo needs Linux 6.18.4 or newer for the KFD driver fixes; on older
 kernels GPU compute initialization can fail outright. Fedora 43+, Ubuntu
 26.04 and Arch carry the fixes already.
 
-Two consequences specific to a shared pool:
+Two things follow from sharing one pool.
 
 `torch.cuda.mem_get_info()` reports the unified aperture, not real VRAM. On a
-31 GiB machine it reports roughly 96 GiB. Anything that sizes a batch from that
-number will overcommit badly. Size from system RAM and the GTT limit instead.
+31 GiB machine it reports roughly 96 GiB, so anything that sizes a batch from
+it will overcommit. Size from system RAM and the GTT limit instead.
 
-A local inference server competes with the trainer for the same memory. During
-testing, Lemonade was holding Whisper-Large-v3-Turbo on the iGPU at 4.6 GiB.
-Unload it before a training run:
+A local inference server holds memory the trainer needs. Unload it first:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/unload

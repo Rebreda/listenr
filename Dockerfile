@@ -3,13 +3,6 @@
 # Base: official AMD-tested ROCm 7.2 + PyTorch 2.9.1 image (Python 3.12).
 # Ref:  https://rocm.docs.amd.com/en/latest/how_to/pytorch_install/pytorch_install.html
 #
-# A newer base exists and is a straight swap on paper:
-#   rocm/pytorch:rocm7.14_ubuntu24.04_py3.13_pytorch_release_2.12.0
-# ROCm 7.14 brings the TheRock modular build and PyTorch 2.12. We have not
-# moved because the bump is untested on the cards this repo targets, and
-# gfx1151 (Strix Halo) has open crash reports on newer ROCm. Test on your own
-# hardware before switching. See docs/finetune-amd.md for the GPU notes.
-#
 # Pull:  podman pull rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
 # Build: podman build -t listenr-rocm .
 # Run:   see docs/finetune-amd.md

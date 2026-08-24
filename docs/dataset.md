@@ -47,7 +47,7 @@ listenr build-dataset \
 | `--format csv\|hf\|both` | `csv` | Output format |
 | `--seed N` | `42` | Random seed for reproducible splits |
 | `--no-strip-tags` | off | Keep noise tags like `(music)` in transcriptions |
-| `--remap-audio-prefix OLD:NEW` | — | Rewrite audio path prefix (useful in containers) |
+| `--remap-audio-prefix OLD:NEW` |: | Rewrite audio path prefix (useful in containers) |
 | `--dry-run` | off | Print stats and exit without writing files |
 
 ---
@@ -78,7 +78,7 @@ ds = load_from_disk("~/listenr_dataset/hf_dataset")
 print(ds)
 ```
 
-The `Audio` feature is loaded lazily — audio files are read from disk only
+The `Audio` feature is loaded lazily: audio files are read from disk only
 when the batch is accessed. Pass this directory directly to `listenr finetune`.
 
 ---
@@ -194,7 +194,7 @@ Topics can be given inline (repeat `--topic`) or one-per-line via `--topics-file
 Each kept record is annotated with `topic_score` and the matched `category`.
 Use `--keep-all` to annotate every clip instead of dropping non-matches.
 
-> Similarity thresholds are corpus-dependent — start with `--dry-run` and adjust.
+> Similarity thresholds are corpus-dependent: start with `--dry-run` and adjust.
 > Note that filtering only finds what's in the source: a lifestyle-speech
 > dataset has few technology clips no matter the threshold, so pick a source
 > that actually contains your target domain.
@@ -205,11 +205,11 @@ Use `--keep-all` to annotate every clip instead of dropping non-matches.
 rather than reshuffling it. This is the default whenever any record carries a
 `source_split`, which the importers write.
 
-It matters more than it looks. Public corpora keep speakers disjoint across
-their splits on purpose. Reshuffling puts the same voice in train and test, so
-the model is scored on speakers it trained on and any WER improvement is
-partly an artefact. It also makes your number incomparable to every published
-baseline for that corpus, because you are no longer evaluating on its test set.
+Public corpora keep speakers disjoint across their splits on purpose.
+Reshuffling puts the same voice in train and test, so the model is scored on
+speakers it trained on and any WER improvement is partly an artefact. It also
+makes your number incomparable to published baselines for that corpus,
+because you are no longer evaluating on its test set.
 
 Records with no `source_split`, including everything from `listenr record`, go
 to train. They can never reach dev or test, so they cannot affect an

@@ -2,6 +2,7 @@
 
 import importlib
 import importlib.util
+from pathlib import Path
 
 import pytest
 
@@ -80,3 +81,27 @@ def test_import_error_in_a_core_command_is_not_swallowed(monkeypatch):
     _fail_importing(monkeypatch, "listenr.cli", "genuinely broken")
     with pytest.raises(ImportError):
         _run(monkeypatch, "record")
+
+
+class TestReadmeStaysAccurate:
+    """The README lists every command; a new one must not be forgotten there."""
+
+    README = Path(__file__).parent.parent / "README.md"
+
+    def test_every_command_is_documented(self):
+        readme = self.README.read_text()
+        missing = [c for c in COMMANDS if f"`listenr {c}`" not in readme]
+        assert not missing, f"not in README: {missing}"
+
+    def test_no_command_is_invented(self):
+        import re
+
+        readme = self.README.read_text()
+        listed = set(re.findall(r"`listenr ([a-z-]+)`", readme))
+        unknown = listed - set(COMMANDS) - {"record", "build-dataset"}
+        assert not unknown, f"README names commands that do not exist: {unknown}"
+
+    def test_extras_are_named_correctly(self):
+        readme = self.README.read_text()
+        for command, extra in EXTRAS.items():
+            assert f"`{extra}`" in readme, f"extra {extra} for {command} not in README"

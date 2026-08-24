@@ -92,9 +92,8 @@ listenr eval --compare-base --keyword YourDomainWord
 See [docs/setup.md](https://github.com/Rebreda/listenr/blob/main/docs/setup.md) for full installation details.
 
 If you want to mix in an external ASR dataset, use the optional importers to
-write a separate Listenr-compatible manifest — `listenr import-mdc <dataset-id>`
-(Mozilla Data Collective) or `listenr import-hf <dataset-id>` (Hugging Face) —
-then pass that manifest to `listenr build-dataset` alongside your normal one.
+write a separate Listenr-compatible manifest: `listenr import-mdc <dataset-id>`
+(Mozilla Data Collective) or `listenr import-hf <dataset-id>` (Hugging Face): then pass that manifest to `listenr build-dataset` alongside your normal one.
 See [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.md) for details.
 
 ## Under the hood
@@ -107,6 +106,24 @@ See [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.
 
 **Deployment** - `listenr merge` folds the LoRA adapter into a self-contained model that loads with plain `transformers`. No PEFT dependency. Run inference locally or deploy it anywhere.
 
+## Commands
+
+| Command | What it does | Needs |
+|---|---|---|
+| `listenr record` | Record from the microphone with live transcription | core |
+| `listenr asr` | Transcribe an audio file | core |
+| `listenr retranscribe` | Re-run Whisper on saved clips | core |
+| `listenr build-dataset` | Build train/dev/test splits from recordings | core |
+| `listenr categorize` | Filter a manifest to clips matching topics | `categorize` |
+| `listenr import-mdc` | Import a Mozilla Data Collective dataset | `mdc` |
+| `listenr import-hf` | Import a Hugging Face dataset | `hf` |
+| `listenr finetune` | Fine-tune Whisper or Moonshine with LoRA | `finetune` |
+| `listenr merge` | Merge a LoRA adapter into a standalone model | `finetune` |
+| `listenr eval` | Evaluate the merged model on the test split | `finetune` |
+
+Extras install with `uv pip install "listenr[finetune]"`. Running a command
+without its extra prints the install line you need.
+
 ## Documentation
 
 | Guide | Description |
@@ -114,8 +131,8 @@ See [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.
 | [docs/setup.md](https://github.com/Rebreda/listenr/blob/main/docs/setup.md) | Installation, Lemonade Server, microphone setup |
 | [docs/configuration.md](https://github.com/Rebreda/listenr/blob/main/docs/configuration.md) | Full `config.toml` reference, VAD tuning, available models |
 | [docs/recording.md](https://github.com/Rebreda/listenr/blob/main/docs/recording.md) | CLI usage, how recording works, batch transcription |
-| [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.md) | Building train/dev/test splits, CSV and HF formats, and the optional Mozilla Data Collective import |
-| [docs/finetune-amd.md](https://github.com/Rebreda/listenr/blob/main/docs/finetune-amd.md) | Fine-tuning Whisper on AMD GPU via ROCm + Podman, merging, and inference testing |
+| [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.md) | Building train/dev/test splits, importing public corpora, and filtering by topic |
+| [docs/finetune-amd.md](https://github.com/Rebreda/listenr/blob/main/docs/finetune-amd.md) | Fine-tuning on an AMD GPU via ROCm and Podman, merging, and evaluation |
 | [docs/troubleshooting.md](https://github.com/Rebreda/listenr/blob/main/docs/troubleshooting.md) | Common errors and fixes |
 
 ## Acknowledgments

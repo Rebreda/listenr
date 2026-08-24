@@ -8,7 +8,7 @@
 
 - Check Lemonade is running: `curl http://localhost:13305/v1/health`
 - Run with `--debug` to see mic RMS values and WebSocket messages
-- If RMS stays near `0.000`, your `input_device` setting is wrong — list
+- If RMS stays near `0.000`, your `input_device` setting is wrong: list
   devices and update config (see [setup.md](setup.md))
 - Lower `threshold` in `[VAD]` if your mic is quiet
 
@@ -16,7 +16,7 @@
 
 - Confirm `LLM.enabled = true` and the model name matches one loaded in Lemonade
 - Check `curl http://localhost:13305/api/v1/models` to see loaded models
-- LLM errors are non-fatal — the raw transcript is saved regardless
+- LLM errors are non-fatal: the raw transcript is saved regardless
 
 ### `Could not discover Lemonade websocket port`
 
@@ -36,13 +36,13 @@ See [configuration.md](configuration.md) for guidance.
 
 All entries failed validation. The most common causes:
 
-1. **Audio files not found** — `manifest.jsonl` stores absolute host paths.
+1. **Audio files not found**: `manifest.jsonl` stores absolute host paths.
    Inside a container, use `--remap-audio-prefix OLD:NEW` to rewrite them:
    ```bash
    --remap-audio-prefix /home/you/.listenr/audio_clips:/data/listenr/audio_clips
    ```
-2. **Clips too short** — lower `--min-duration` (default: `0.3s`)
-3. **Transcripts too short** — lower `--min-chars` (default: `2`)
+2. **Clips too short**: lower `--min-duration` (default: `0.3s`)
+3. **Transcripts too short**: lower `--min-chars` (default: `2`)
 
 Run with `--dry-run` to see counts before committing any writes.
 
@@ -67,18 +67,17 @@ Usually caused by GPU imbalance on a multi-GPU system. Restrict to one GPU:
 
 Two known causes:
 
-1. **`HSA_OVERRIDE_GFX_VERSION` set to empty string** — an empty string is not
+1. **`HSA_OVERRIDE_GFX_VERSION` set to empty string**: an empty string is not
    the same as unset and causes ROCm to fail silently. Never set this variable
    unless you have a specific gfx version to override; omit it entirely otherwise.
 
-2. **pip replaced the ROCm torch wheel with a CPU-only build** — installs of
+2. **pip replaced the ROCm torch wheel with a CPU-only build**: installs of
    `transformers` or other packages can pull a vanilla `torch` from PyPI as a
    dependency, silently replacing the ROCm wheel. The `Dockerfile` guards
    against this with a `pip freeze` constraint file before installing extras.
-   Verify with: `python3 -c "import torch; print(torch.version.hip)"`
-   — if this prints `None`, the ROCm wheel was replaced.
+   Verify with: `python3 -c "import torch; print(torch.version.hip)"`: if this prints `None`, the ROCm wheel was replaced.
 
-3. **Using `rocm/pytorch:latest`** — the `latest` tag can point to a preview
+3. **Using `rocm/pytorch:latest`**: the `latest` tag can point to a preview
    or less-tested build. Use the specific stable tag:
    `rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1`
 
@@ -94,10 +93,10 @@ Check your GPU model: `rocm-smi --showproductname`
 
 ### `cannot set shmsize when running in the host IPC Namespace`
 
-Cannot combine `--shm-size` with `--ipc=host`. Drop `--shm-size` — when
+Cannot combine `--shm-size` with `--ipc=host`. Drop `--shm-size`: when
 `--ipc=host` is set, the container shares the host's `/dev/shm` directly.
 
-### `command not found: docker` — you have Podman
+### `command not found: docker`: you have Podman
 
 Fedora and other distributions ship `podman` instead of `docker`. Replace
 `docker` with `podman` in all commands. They are CLI-compatible for `run` and
@@ -136,15 +135,14 @@ same (e.g. `8×2 = 16` → `2×8 = 16`) preserves training dynamics.
 
 ### `podman build` hangs for a long time on `apt-get`
 
-The build sits on the `apt-get install libsndfile1 ffmpeg` layer for far
-longer than the twenty seconds or so it should take, with no error. Two causes
-seen on the same machine, both of which look identical from outside:
+The build sits on the `apt-get install libsndfile1 ffmpeg` layer far longer
+than the twenty seconds it should take, with no error. Two causes, and they
+look identical from outside.
 
-A host firewall silently blocking DNS from inside the build. OpenSnitch does
-this: apt reports `Temporary failure resolving archive.ubuntu.com` and retries,
+A host firewall blocking DNS from inside the build. OpenSnitch does this: apt
+reports `Temporary failure resolving archive.ubuntu.com` and retries forever,
 and because the prompt never surfaces it reads as a broken Dockerfile. Check
-your firewall's event log, and allow the podman build or disable the firewall
-for the build.
+your firewall's event log and allow the build.
 
 No usable IPv6 route while the mirror resolves to IPv6 only. Check from a
 container:
