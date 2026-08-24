@@ -54,6 +54,12 @@ def save_recording(
     Returns
     -------
     The record dict that was appended to manifest.jsonl.
+
+    Raises
+    ------
+    ValueError
+        If *pcm_frames* holds no audio. Nothing is written in that case,
+        neither the WAV nor the manifest row.
     """
     ts = datetime.now(timezone.utc)
     date_str = ts.strftime('%Y-%m-%d')
@@ -64,8 +70,20 @@ def save_recording(
 
     audio_path = audio_dir / f"clip_{date_str}_{uid}.wav"
 
-    # Reconstruct float32 from PCM-16 bytes and write WAV
+    # Reconstruct float32 from PCM-16 bytes
     audio_np = np.frombuffer(b''.join(pcm_frames), dtype='<i2').astype(np.float32) / 32767.0
+
+    # Refuse to write a clip with no audio. A caller checking `if pcm_frames`
+    # only catches an empty list, not a list of empty chunks, and a zero-frame
+    # WAV is worse than no file at all: it exists, so every downstream check
+    # that tests for path existence passes, and the manifest row claims a
+    # transcript for audio that is not there.
+    if audio_np.size == 0:
+        raise ValueError(
+            "Refusing to save a clip with no audio. "
+            f"{len(pcm_frames)} chunk(s) assembled to 0 frames."
+        )
+
     sf.write(str(audio_path), audio_np, asr_rate, subtype='PCM_16')
 
     record = {

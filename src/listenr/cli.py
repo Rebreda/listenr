@@ -26,7 +26,7 @@ from scipy.signal import resample_poly
 
 from listenr.unified_asr import LemonadeUnifiedASR
 from listenr.llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
-from listenr.transcript_utils import is_hallucination, strip_noise_tags
+from listenr.transcript_utils import implausible_speech_rate, is_hallucination, strip_noise_tags
 from listenr.storage import save_recording, patch_manifest_record
 from listenr.retranscribe import retranscribe_clip
 from listenr.settings import ASR_RATE, settings
@@ -158,7 +158,15 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
         logging.root.setLevel(logging.DEBUG)
 
     asr = LemonadeUnifiedASR(use_llm=False)  # LLM correction handled here for saving
+    # Audio for the segment currently being spoken.
     pcm_buffer: list = []
+    # Audio for segments already committed to the server, oldest first, waiting
+    # for their transcripts. Keeping these separate is what stops a transcript
+    # being paired with the wrong audio: after a commit forced by max_segment_s
+    # the speaker is still talking, so speech_started for the next utterance
+    # arrives before the transcript for the committed one. Bounded because a
+    # transcript that never arrives must not grow this without limit.
+    pending_segments: deque[list] = deque(maxlen=16)
     # Rolling window of (raw, corrected) pairs passed as context to the LLM
     llm_context: deque[tuple[str, str]] = deque(maxlen=LLM_CONTEXT_WINDOW)
 
@@ -184,6 +192,17 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                 print(f"\r  [ASR] {interim} ...", end='', flush=True)
 
         elif msg_type == 'conversation.item.input_audio_transcription.completed':
+            # Claim this transcript's audio before doing anything else, so every
+            # path below discards the right segment rather than leaving the
+            # queue misaligned with the transcripts still to come.
+            if pending_segments:
+                segment = pending_segments.popleft()
+            else:
+                # No commit was seen, e.g. an older server that does not emit
+                # one. Fall back to the previous behaviour.
+                segment = list(pcm_buffer)
+                pcm_buffer.clear()
+
             raw_text = result.get('transcript', '').strip()
             if not raw_text:
                 continue
@@ -192,7 +211,6 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                 print('\r' + ' ' * 80 + '\r', end='', flush=True)
                 if debug:
                     print(f"  [DEBUG] hallucination dropped: {raw_text!r}", flush=True)
-                pcm_buffer.clear()
                 continue
 
             stripped_text = strip_noise_tags(raw_text)
@@ -200,7 +218,6 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                 print('\r' + ' ' * 80 + '\r', end='', flush=True)
                 if debug:
                     print(f"  [DEBUG] all-noise stripped: {raw_text!r}", flush=True)
-                pcm_buffer.clear()
                 continue
             if stripped_text != raw_text and debug:
                 print(f"  [DEBUG] noise tags stripped: {raw_text!r} -> {stripped_text!r}", flush=True)
@@ -233,9 +250,12 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
             print(f"  [ASR] {corrected_text}{cats}")
 
             if save:
-                if pcm_buffer:
+                # A segment can hold chunks that assemble to no audio at all,
+                # which save_recording refuses rather than writing a
+                # zero-frame WAV with a transcript attached.
+                try:
                     record = save_recording(
-                        list(pcm_buffer), raw_text, corrected_text,
+                        segment, raw_text, corrected_text,
                         storage_base=STORAGE_BASE,
                         asr_rate=ASR_RATE,
                         whisper_model=WHISPER_MODEL,
@@ -243,6 +263,16 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                         is_improved=is_improved,
                         categories=categories,
                     )
+                    rate = implausible_speech_rate(raw_text, record["duration_s"])
+                    if rate is not None:
+                        print(
+                            f"  WARNING: {record['audio_path']} pairs "
+                            f"{len(raw_text.split())} words with "
+                            f"{record['duration_s']}s ({rate:.0f} words/s). The "
+                            f"audio and transcript probably came from different "
+                            f"segments; build-dataset will drop this clip.",
+                            flush=True,
+                        )
                     print(f"  [SAVED] {record['audio_path']} ({record['duration_s']}s)")
                     if retranscribe:
                         try:
@@ -264,11 +294,20 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                         except Exception as exc:
                             if debug:
                                 print(f"  [DEBUG] batch retranscribe failed: {exc}")
-                    pcm_buffer.clear()
-                else:
-                    print(f"  WARNING: pcm_buffer is empty -- no audio captured for this segment", flush=True)
+                except ValueError as exc:
+                    print(f"  WARNING: not saved -- {exc}", flush=True)
+
+        elif msg_type == 'input_audio_buffer.committed':
+            # Hand the spoken audio to the queue now, while it is still the
+            # audio the server just committed.
+            pending_segments.append(list(pcm_buffer))
+            if debug:
+                print(f"  [DEBUG] committed -- queued {len(pcm_buffer)} chunks", flush=True)
+            pcm_buffer.clear()
 
         elif msg_type == 'input_audio_buffer.speech_started':
+            # Only ever discards audio not yet committed. Anything committed is
+            # already safe in pending_segments.
             if debug:
                 print(f"  [DEBUG] speech_started -- clearing pcm_buffer (had {len(pcm_buffer)} chunks)", flush=True)
             pcm_buffer.clear()

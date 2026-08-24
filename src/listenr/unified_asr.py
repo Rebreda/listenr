@@ -143,13 +143,16 @@ class LemonadeUnifiedASR:
                 'conversation.item.input_audio_transcription.completed',
                 'conversation.item.input_audio_transcription.delta',
                 'input_audio_buffer.speech_started',
+                # Consumers need this to know which audio belongs to the
+                # transcript that arrives next. It used to be debug-only, which
+                # left them reading a live buffer that had already moved on.
+                'input_audio_buffer.committed',
                 'error',
             }
             _DEBUG_FORWARD = {
                 'session.created',
                 'session.updated',
                 'input_audio_buffer.speech_stopped',
-                'input_audio_buffer.committed',
                 'input_audio_buffer.cleared',
             }
 

@@ -161,3 +161,26 @@ class TestManifest:
             (tmp_path / 'manifest.jsonl').read_text(encoding='utf-8').strip()
         )
         assert manifest_record['raw_transcription'] == 'cafe resume'
+
+
+class TestRefusesEmptyAudio:
+    """A zero-frame WAV is worse than no file: it passes every existence check."""
+
+    def test_no_frames_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="no audio"):
+            save_recording([], 'a transcript', 'a transcript', storage_base=tmp_path)
+
+    def test_empty_chunks_raise(self, tmp_path):
+        """`if pcm_frames:` passes here, which is how these got written."""
+        with pytest.raises(ValueError, match="no audio"):
+            save_recording([b'', b''], 'a transcript', 'a transcript', storage_base=tmp_path)
+
+    def test_nothing_is_written_when_it_refuses(self, tmp_path):
+        with pytest.raises(ValueError):
+            save_recording([b''], 'x', 'x', storage_base=tmp_path)
+        assert not (tmp_path / 'manifest.jsonl').exists()
+        assert list(tmp_path.rglob('*.wav')) == []
+
+    def test_real_audio_still_saves(self, tmp_path, silence_frames):
+        record = save_recording(silence_frames, 'x', 'x', storage_base=tmp_path)
+        assert record['duration_s'] > 0

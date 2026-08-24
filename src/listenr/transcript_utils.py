@@ -109,3 +109,28 @@ def clean_transcript(text: str) -> tuple[str | None, str]:
         return ('strip', stripped)
 
     return ('ok', text.strip())
+
+
+# Fast conversational speech tops out around 5 words per second, and read
+# speech is slower. 8 leaves generous headroom while still catching audio and
+# text that came from different segments.
+MAX_WORDS_PER_SECOND = 8.0
+
+
+def implausible_speech_rate(text: str, duration_s: float) -> float | None:
+    """Return the words-per-second rate when it is physically impossible.
+
+    A transcript can only be paired with the wrong audio silently, because
+    both halves look fine on their own. Rate is the cheap tell: 25 words
+    against 0.085 seconds is 294 words per second, which no speaker produces.
+
+    Returns None when the pairing is plausible, or when there is not enough
+    information to judge.
+    """
+    if duration_s <= 0:
+        return None
+    words = len(text.split())
+    if words == 0:
+        return None
+    rate = words / duration_s
+    return rate if rate > MAX_WORDS_PER_SECOND else None
