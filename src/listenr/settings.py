@@ -141,14 +141,28 @@ class FinetuneSettings(BaseModel):
 
 # Keyword corrections passed to the LLM to fix common STT misrecognitions,
 # {misheard: correct}. Keys are matched case-insensitively.
+# Every entry below was observed in real transcription, not guessed. The model
+# names in particular are ordinary English words, so even a large model hears
+# them as the words: Whisper-Large-v3-Turbo produced "Cloud Sonic", "Cloud
+# Opus" and "ROCKM" in a recording session on this corpus.
 DEFAULT_CORRECTIONS: dict[str, str] = {
     "clod": "Claude Code",
     "clode": "Claude Code",
     "cloud code": "Claude Code",
     "clock code": "Claude Code",
+    "cloud sonic": "Claude Sonnet",
+    "cloud sonnet": "Claude Sonnet",
+    "cloud opus": "Claude Opus",
+    "cloud haiku": "Claude Haiku",
     "open ai": "OpenAI",
     "unsurropic": "Anthropic",
     "anthropic": "Anthropic",
+    "rockm": "ROCm",
+    "rock m": "ROCm",
+    "pie torch": "PyTorch",
+    "hugging face": "Hugging Face",
+    "low rank adaptation": "LoRA",
+    "kubernetes": "Kubernetes",
 }
 
 
