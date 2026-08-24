@@ -12,7 +12,7 @@ utterance as a `.wav` clip.
 # Record and save everything (default)
 listenr record
 
-# Print transcriptions only — nothing saved to disk
+# Print transcriptions only: nothing saved to disk
 listenr record --no-save
 
 # Also print the raw Whisper output before LLM correction
@@ -29,31 +29,34 @@ Press **Ctrl+C** to stop. Listenr will unload all models from Lemonade before ex
 ## Example output
 
 ```
-🎤 Listenr CLI — streaming to Lemonade
-   Model  : Whisper-Large-v3-Turbo
-   WS URL : ws://localhost:9000/realtime?model=Whisper-Large-v3-Turbo
+Listenr CLI -- streaming to Lemonade
+   Model  : Whisper-Base
+   WS URL : ws://localhost:9000/v1/realtime?model=Whisper-Base
    LLM    : enabled (gpt-oss-20b-mxfp4-GGUF)
-   Save   : yes → ~/.listenr/audio_clips
+   Save   : yes -> /home/you/.listenr/audio_clips
+   VAD    : silence=800ms  threshold=0.05  max_segment=12.0s
+   Debug  : off  (use --debug to enable)
+   Batch  : off
    Press Ctrl+C to stop.
 
   [ASR] I'm going to the store to buy some milk.  [dictation]
-  [SAVED] ~/.listenr/audio_clips/audio/2026-02-28/clip_2026-02-28_abc123.wav (2.4s)
+  [SAVED] /home/you/.listenr/audio_clips/audio/2026-02-28/clip_2026-02-28_abc123.wav (2.4s)
 ```
 
 ---
 
 ## How it works
 
-1. **Capture** — audio is streamed from your microphone at the device's native
+1. **Capture**: audio is streamed from your microphone at the device's native
    sample rate and resampled to 16 kHz PCM-16 before sending.
-2. **VAD** — Lemonade's server-side voice activity detection segments speech
+2. **VAD**: Lemonade's server-side voice activity detection segments speech
    boundaries automatically.
-3. **Transcribe** — Lemonade runs Whisper.cpp on each speech segment and streams
+3. **Transcribe**: Lemonade runs Whisper.cpp on each speech segment and streams
    back interim and final transcripts.
-4. **Correct (optional)** — the final transcript is sent to a local LLM. The
+4. **Correct (optional)**: the final transcript is sent to a local LLM. The
    LLM returns a cleaned transcript, an `is_improved` flag, and content
-   `categories`. LLM errors are non-fatal — the raw transcript is saved regardless.
-5. **Save** — each utterance is saved as:
+   `categories`. LLM errors are non-fatal: the raw transcript is saved regardless.
+5. **Save**: each utterance is saved as:
    - `~/.listenr/audio_clips/audio/<date>/clip_<uuid>.wav`
    - a line appended to `~/.listenr/audio_clips/manifest.jsonl`
 

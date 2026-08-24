@@ -3,14 +3,14 @@
 All settings live in one typed settings object ([`listenr/settings.py`](../src/listenr/settings.py))
 and can be set three ways. Precedence, highest first:
 
-1. **CLI flags** — per-run overrides (see `--help` on each command)
-2. **Environment variables** — `LISTENR_<SECTION>__<KEY>`, e.g.
+1. **CLI flags**: per-run overrides (see `--help` on each command)
+2. **Environment variables**: `LISTENR_<SECTION>__<KEY>`, e.g.
    `LISTENR_FINETUNE__MAX_STEPS=500`. Also read from a `.env` file in the
    working directory. Ideal for containers.
-3. **`~/.config/listenr/config.toml`** — persistent user defaults
+3. **`~/.config/listenr/config.toml`**: persistent user defaults
    (override the file location with `LISTENR_CONFIG=/path/to/config.toml`)
 
-No config file is required — every setting has a sensible default. Invalid
+No config file is required: every setting has a sensible default. Invalid
 values (wrong type, unknown enum) fail loudly at startup with a clear error.
 
 To start from a fully commented template:
