@@ -40,6 +40,11 @@ logger = logging.getLogger("listenr.build_dataset")
 CSV_COLUMNS = [
     "uuid",
     "split",
+    # Which split the source corpus assigned, when it came from an importer.
+    # Kept so a built dataset records whether its splits are the corpus's own
+    # or a reshuffle, which is the difference between a comparable result and
+    # a speaker-leaked one.
+    "source_split",
     "audio_path",
     "raw_transcription",
     "corrected_transcription",
@@ -166,6 +171,9 @@ def validate_entry(
 
     return {
         "uuid": data.get("uuid", ""),
+        # Must be carried through: assign_splits runs on validated entries, so
+        # dropping this here makes every split-preservation path unreachable.
+        "source_split": data.get("source_split"),
         "audio_path": str(audio_path.resolve()),
         "raw_transcription": raw,
         "corrected_transcription": corrected,

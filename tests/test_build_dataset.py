@@ -535,3 +535,100 @@ class TestSkipReasons:
         from listenr.build_dataset import validate_entry
 
         assert validate_entry({"uuid": "a"}, 0.0, 0) is None
+
+
+class TestSplitsEndToEnd:
+    """Runs the real CLI from a manifest file on disk.
+
+    The unit tests for assign_splits passed while split preservation was
+    completely unreachable in practice, because they fed it dicts that still
+    had source_split. validate_entry rebuilds each record from a whitelist,
+    and source_split was not on it, so by the time the preserve logic ran the
+    field was always gone. Only a test that starts where a user starts catches
+    that.
+    """
+
+    @staticmethod
+    def _manifest(tmp_path, rows):
+        import soundfile as sf
+
+        manifest = tmp_path / "manifest.jsonl"
+        with open(manifest, "w") as f:
+            for i, source_split in enumerate(rows):
+                wav = tmp_path / f"clip{i}.wav"
+                sf.write(str(wav), np.zeros(16000, dtype="float32"), 16000, subtype="PCM_16")
+                record = {
+                    "uuid": f"u{i}",
+                    "audio_path": str(wav),
+                    "raw_transcription": "a sentence long enough to survive validation",
+                    "corrected_transcription": "a sentence long enough to survive validation",
+                    "duration_s": 1.0,
+                    "sample_rate": 16000,
+                }
+                if source_split is not None:
+                    record["source_split"] = source_split
+                f.write(json.dumps(record) + "\n")
+        return manifest
+
+    @staticmethod
+    def _run(monkeypatch, manifest, output, *extra):
+        from listenr.build_dataset import main
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["listenr build-dataset", "--manifest", str(manifest),
+             "--output", str(output), "--format", "csv", *extra],
+        )
+        main()
+
+    @staticmethod
+    def _counts(output):
+        counts = {}
+        for split in ("train", "dev", "test"):
+            path = output / f"{split}.csv"
+            if path.exists():
+                rows = list(csv.DictReader(open(path)))
+                if rows:
+                    counts[split] = len(rows)
+        return counts
+
+    def test_corpus_splits_survive_the_whole_pipeline(self, tmp_path, monkeypatch):
+        rows = ["train"] * 10 + ["validation"] * 3 + ["test"] * 4
+        manifest = self._manifest(tmp_path, rows)
+        output = tmp_path / "out"
+        self._run(monkeypatch, manifest, output)
+        assert self._counts(output) == {"train": 10, "dev": 3, "test": 4}
+
+    def test_preserve_splits_flag_does_not_error_on_a_real_manifest(self, tmp_path, monkeypatch):
+        """The 0.2.0 bug: this errored with 'no entry has a usable source_split'."""
+        manifest = self._manifest(tmp_path, ["train"] * 8 + ["test"] * 2)
+        output = tmp_path / "out"
+        self._run(monkeypatch, manifest, output, "--preserve-splits")
+        assert self._counts(output) == {"train": 8, "test": 2}
+
+    def test_unlabelled_records_go_to_train(self, tmp_path, monkeypatch):
+        manifest = self._manifest(tmp_path, ["train"] * 5 + ["test"] * 2 + [None] * 3)
+        output = tmp_path / "out"
+        self._run(monkeypatch, manifest, output)
+        assert self._counts(output) == {"train": 8, "test": 2}
+
+    def test_no_preserve_splits_reshuffles(self, tmp_path, monkeypatch):
+        manifest = self._manifest(tmp_path, ["test"] * 20)
+        output = tmp_path / "out"
+        self._run(monkeypatch, manifest, output, "--no-preserve-splits", "--split", "80/10/10")
+        counts = self._counts(output)
+        assert counts.get("train", 0) == 16, counts
+
+    def test_own_recordings_with_no_source_split_still_shuffle(self, tmp_path, monkeypatch):
+        manifest = self._manifest(tmp_path, [None] * 20)
+        output = tmp_path / "out"
+        self._run(monkeypatch, manifest, output, "--split", "80/10/10")
+        assert self._counts(output).get("train", 0) == 16
+
+    def test_source_split_is_recorded_in_the_output(self, tmp_path, monkeypatch):
+        """So a built dataset says whether its splits are the corpus's own."""
+        manifest = self._manifest(tmp_path, ["test"] * 3)
+        output = tmp_path / "out"
+        self._run(monkeypatch, manifest, output)
+        rows = list(csv.DictReader(open(output / "test.csv")))
+        assert all(r["source_split"] == "test" for r in rows)
