@@ -28,6 +28,7 @@ import json
 import logging
 import random
 import sys
+from collections import Counter
 from pathlib import Path
 
 from listenr.settings import settings
@@ -90,6 +91,7 @@ def validate_entry(
     min_duration: float,
     min_chars: int,
     strip_tags: bool = True,
+    reasons: "Counter[str] | None" = None,
 ) -> dict | None:
     """Validate a manifest record; return None if it fails.
 
@@ -98,15 +100,24 @@ def validate_entry(
     strip_tags : if True, parenthesised/bracketed noise tags such as (music) or
                  [Applause] are stripped from both transcription fields before
                  validation and output.
+    reasons    : optional Counter, incremented with why a record was dropped.
+                 The per-record detail is logged at DEBUG, so without this a
+                 caller can only report a bare skip count and cannot tell short
+                 clips from missing audio from over-stripped transcripts.
     """
+    def _drop(reason: str) -> None:
+        if reasons is not None:
+            reasons[reason] += 1
     for field in ("uuid", "raw_transcription", "audio_path"):
         if not data.get(field):
             logger.debug(f"Skipping record {data.get('uuid', '?')}: missing field '{field}'")
+            _drop(f"missing field '{field}'")
             return None
 
     duration = float(data.get("duration_s") or 0.0)
     if duration < min_duration:
         logger.debug(f"Skipping {data['uuid']}: duration {duration:.2f}s < {min_duration}s")
+        _drop(f"shorter than --min-duration ({min_duration}s)")
         return None
 
     raw = data.get("raw_transcription", "") or ""
@@ -119,11 +130,13 @@ def validate_entry(
     # Use the raw transcription for the min_chars check (authoritative source)
     if len(raw.replace(" ", "")) < min_chars:
         logger.debug(f"Skipping {data['uuid']}: transcript too short after tag stripping")
+        _drop(f"transcript under --min-chars ({min_chars}) after tag stripping")
         return None
 
     audio_path = Path(data["audio_path"]).expanduser()
     if not audio_path.exists():
         logger.debug(f"Skipping {data['uuid']}: audio file missing at {audio_path}")
+        _drop("audio file missing on disk")
         return None
 
     return {
@@ -152,7 +165,49 @@ def parse_split(split_str: str) -> tuple[float, float, float]:
     return tuple(v / total for v in values)  # type: ignore[return-value]
 
 
-def assign_splits(
+#: Values a source corpus may use for its splits, normalised to ours.
+_SOURCE_SPLIT_ALIASES = {
+    "train": "train",
+    "training": "train",
+    "dev": "dev",
+    "validation": "dev",
+    "valid": "dev",
+    "eval": "dev",
+    "test": "test",
+    "testing": "test",
+}
+
+
+def normalise_source_split(value: object) -> str | None:
+    """Map a corpus's own split name onto train/dev/test, or None if unknown."""
+    if not isinstance(value, str):
+        return None
+    return _SOURCE_SPLIT_ALIASES.get(value.strip().lower())
+
+
+def count_source_splits(entries: list[dict]) -> tuple[int, int]:
+    """Return (labelled, unlabelled) counts for source-assigned splits."""
+    labelled = sum(
+        1 for e in entries if normalise_source_split(e.get("source_split")) is not None
+    )
+    return labelled, len(entries) - labelled
+
+
+def preserve_source_splits(entries: list[dict]) -> list[dict]:
+    """Adopt each entry's source split; put unlabelled entries in train.
+
+    Real corpora are not uniformly labelled. MDC Spontaneous Speech 4.0 ships
+    2,425 records of which 120 carry no split at all. Sending those to train is
+    the conservative choice: test stays exactly the corpus's own test set, so
+    an unlabelled clip can never contaminate the evaluation or inflate a WER
+    improvement. The caller reports how many were placed this way.
+    """
+    for entry in entries:
+        entry["split"] = normalise_source_split(entry.get("source_split")) or "train"
+    return entries
+
+
+def shuffle_splits(
     entries: list[dict],
     train_frac: float,
     dev_frac: float,
@@ -173,6 +228,53 @@ def assign_splits(
         else:
             entry["split"] = "test"
     return shuffled
+
+
+def assign_splits(
+    entries: list[dict],
+    train_frac: float,
+    dev_frac: float,
+    seed: int = 42,
+    preserve: bool | None = None,
+) -> tuple[list[dict], str]:
+    """Assign train/dev/test labels, and report which way it was decided.
+
+    A random reshuffle is the right default for your own recordings, and the
+    wrong thing for an imported corpus. Public corpora keep speakers disjoint
+    across their splits deliberately; reshuffling puts the same speaker in
+    train and test, so the model is evaluated on voices it trained on and any
+    WER improvement is inflated. It also makes the result incomparable to
+    every published baseline for that corpus, because it is no longer that
+    corpus's test set.
+
+    The importers already record the source's own split as ``source_split``,
+    so the information is there to respect.
+
+    preserve:
+        True  keep the source splits, and fail if nothing carries one.
+        False always reshuffle.
+        None  keep them when anything carries one, otherwise reshuffle.
+
+    Entries with no source split go to train, never to dev or test, so an
+    unlabelled clip cannot contaminate the evaluation.
+
+    Returns ``(entries, how)`` where *how* is "preserved" or "shuffled", so the
+    caller can say which happened. Silently reshuffling is how this goes
+    unnoticed.
+    """
+    labelled, _unlabelled = count_source_splits(entries)
+
+    if preserve and labelled == 0:
+        raise ValueError(
+            "--preserve-splits was requested but no entry has a usable "
+            "source_split. Records from `listenr record` never have one; only "
+            "imported corpora do. Drop the flag to reshuffle."
+        )
+
+    if preserve is False or labelled == 0:
+        return shuffle_splits(entries, train_frac, dev_frac, seed=seed), "shuffled"
+
+    return preserve_source_splits(entries), "preserved"
 
 
 def write_csv(entries: list[dict], output_dir: Path, split: str) -> Path:
@@ -284,6 +386,17 @@ def main() -> None:
         help=f"Minimum non-whitespace chars in transcription (default: from config, currently {settings.dataset.min_chars})",
     )
     parser.add_argument(
+        "--preserve-splits",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Keep the train/dev/test split the source corpus assigned, instead "
+            "of reshuffling. Default: keep them when every record has one, "
+            "reshuffle otherwise. Reshuffling an imported corpus breaks its "
+            "speaker-disjoint splits and inflates any WER improvement."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=settings.dataset.seed,
@@ -356,20 +469,52 @@ def main() -> None:
 
     entries = []
     skipped = 0
+    skip_reasons: Counter[str] = Counter()
     for rec in records:
-        entry = validate_entry(rec, args.min_duration, args.min_chars, strip_tags=not args.no_strip_tags)
+        entry = validate_entry(
+            rec,
+            args.min_duration,
+            args.min_chars,
+            strip_tags=not args.no_strip_tags,
+            reasons=skip_reasons,
+        )
         if entry:
             entries.append(entry)
         else:
             skipped += 1
 
     logger.info(f"Valid entries: {len(entries)}, skipped: {skipped}")
+    for reason, count in skip_reasons.most_common():
+        logger.info(f"  skipped {count}: {reason}")
 
     if not entries:
         logger.error("No valid entries found. Check your recordings directory.")
         sys.exit(1)
 
-    entries = assign_splits(entries, train_frac, dev_frac, seed=args.seed)
+    try:
+        entries, how = assign_splits(
+            entries, train_frac, dev_frac, seed=args.seed, preserve=args.preserve_splits
+        )
+    except ValueError as exc:
+        logger.error(str(exc))
+        sys.exit(1)
+
+    if how == "preserved":
+        labelled, unlabelled = count_source_splits(entries)
+        logger.info(
+            "Splits: kept the source corpus's own train/dev/test for %d record(s). "
+            "Speakers stay disjoint and results stay comparable to its published baselines.",
+            labelled,
+        )
+        if unlabelled:
+            logger.info(
+                "  %d record(s) had no source split and went to train, so they "
+                "cannot affect the evaluation. Pass --no-preserve-splits to "
+                "reshuffle everything instead.",
+                unlabelled,
+            )
+    else:
+        logger.info(f"Splits: shuffled at {args.split} with seed {args.seed}.")
     print_stats(entries)
 
     if args.dry_run:

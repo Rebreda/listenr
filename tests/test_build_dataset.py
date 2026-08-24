@@ -18,6 +18,8 @@ from listenr.build_dataset import (
     validate_entry,
     parse_split,
     assign_splits,
+    count_source_splits,
+    normalise_source_split,
     write_csv,
     CSV_COLUMNS,
 )
@@ -251,12 +253,12 @@ class TestAssignSplits:
         return [{"uuid": str(i)} for i in range(n)]
 
     def test_all_entries_assigned_a_split(self):
-        entries = assign_splits(self._make_entries(10), 0.8, 0.1)
+        entries = assign_splits(self._make_entries(10), 0.8, 0.1)[0]
         assert all("split" in e for e in entries)
         assert all(e["split"] in ("train", "dev", "test") for e in entries)
 
     def test_split_counts_approximate_fractions(self):
-        entries = assign_splits(self._make_entries(100), 0.8, 0.1, seed=0)
+        entries = assign_splits(self._make_entries(100), 0.8, 0.1, seed=0)[0]
         counts = {"train": 0, "dev": 0, "test": 0}
         for e in entries:
             counts[e["split"]] += 1
@@ -265,13 +267,13 @@ class TestAssignSplits:
         assert counts["test"] == 10
 
     def test_deterministic_with_same_seed(self):
-        a = assign_splits(self._make_entries(20), 0.8, 0.1, seed=42)
-        b = assign_splits(self._make_entries(20), 0.8, 0.1, seed=42)
+        a = assign_splits(self._make_entries(20), 0.8, 0.1, seed=42)[0]
+        b = assign_splits(self._make_entries(20), 0.8, 0.1, seed=42)[0]
         assert [e["split"] for e in a] == [e["split"] for e in b]
 
     def test_different_seeds_differ(self):
-        a = assign_splits(self._make_entries(20), 0.8, 0.1, seed=1)
-        b = assign_splits(self._make_entries(20), 0.8, 0.1, seed=2)
+        a = assign_splits(self._make_entries(20), 0.8, 0.1, seed=1)[0]
+        b = assign_splits(self._make_entries(20), 0.8, 0.1, seed=2)[0]
         # The label sequence is always 16×train, 2×dev, 2×test — but which
         # UUID ends up in which bucket differs by seed; compare those sets.
         def _train_uuids(result):
@@ -285,7 +287,7 @@ class TestAssignSplits:
         assert [e["uuid"] for e in orig] == ids_before
 
     def test_single_entry_assigned_test(self):
-        entries = assign_splits([{"uuid": "x"}], 0.8, 0.1)
+        entries = assign_splits([{"uuid": "x"}], 0.8, 0.1)[0]
         assert entries[0]["split"] == "test"
 
 
@@ -405,3 +407,131 @@ class TestRemapAudioPrefix:
         self._remap(records, "/host", "/container")
         # Original should be unchanged (we deepcopy in helper)
         assert records[0]["audio_path"] == "/host/clip.wav"
+
+
+# ---------------------------------------------------------------------------
+# Source split preservation
+# ---------------------------------------------------------------------------
+
+
+class TestPreserveSourceSplits:
+    """Reshuffling an imported corpus breaks speaker-disjoint splits.
+
+    Public corpora keep speakers out of each other's splits on purpose. A
+    random reshuffle puts the same voice in train and test, so the model is
+    scored on speakers it trained on and the WER gain is partly fake.
+    """
+
+    @staticmethod
+    def _imported(n, split_name="train"):
+        return [{"uuid": f"u{i}", "source_split": split_name} for i in range(n)]
+
+    def test_source_splits_are_kept_by_default(self):
+        entries = [
+            {"uuid": "a", "source_split": "train"},
+            {"uuid": "b", "source_split": "test"},
+            {"uuid": "c", "source_split": "validation"},
+        ]
+        result, how = assign_splits(entries, 0.8, 0.1)
+        assert how == "preserved"
+        assert [e["split"] for e in result] == ["train", "test", "dev"]
+
+    def test_own_recordings_still_shuffle(self):
+        """Records from `listenr record` have no source_split."""
+        entries = [{"uuid": f"u{i}"} for i in range(10)]
+        result, how = assign_splits(entries, 0.8, 0.1)
+        assert how == "shuffled"
+        assert all(e["split"] in ("train", "dev", "test") for e in result)
+
+    def test_partial_source_splits_are_still_preserved(self):
+        """Real corpora are not uniformly labelled: MDC has 120 of 2,425 blank."""
+        entries = [{"uuid": "a", "source_split": "test"}, {"uuid": "b"}]
+        result, how = assign_splits(entries, 0.8, 0.1)
+        assert how == "preserved"
+        assert result[0]["split"] == "test"
+
+    def test_unlabelled_entries_go_to_train_never_test(self):
+        """An unlabelled clip must not be able to contaminate the evaluation."""
+        entries = [{"uuid": "a", "source_split": "test"}] + [
+            {"uuid": f"u{i}"} for i in range(50)
+        ]
+        result, _ = assign_splits(entries, 0.8, 0.1)
+        unlabelled = [e for e in result if e["uuid"] != "a"]
+        assert {e["split"] for e in unlabelled} == {"train"}
+
+    def test_no_preserve_splits_forces_a_reshuffle(self):
+        entries = self._imported(10)
+        _, how = assign_splits(entries, 0.8, 0.1, preserve=False)
+        assert how == "shuffled"
+
+    def test_preserve_splits_with_nothing_labelled_is_a_loud_error(self):
+        entries = [{"uuid": "a"}, {"uuid": "b"}]
+        with pytest.raises(ValueError, match="no entry has a usable"):
+            assign_splits(entries, 0.8, 0.1, preserve=True)
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("train", "train"),
+            ("Training", "train"),
+            ("validation", "dev"),
+            ("valid", "dev"),
+            ("DEV", "dev"),
+            ("test", "test"),
+            ("  Test  ", "test"),
+            ("holdout", None),
+            (None, None),
+            (3, None),
+        ],
+    )
+    def test_source_split_names_are_normalised(self, raw, expected):
+        assert normalise_source_split(raw) == expected
+
+    def test_count_source_splits(self):
+        entries = [{"source_split": "train"}, {"source_split": "bogus"}, {}]
+        assert count_source_splits(entries) == (1, 2)
+
+    def test_preserved_splits_do_not_reorder_entries(self):
+        """Preserving must not shuffle, or speaker grouping is lost anyway."""
+        entries = [{"uuid": f"u{i}", "source_split": "train"} for i in range(20)]
+        result, _ = assign_splits(entries, 0.8, 0.1)
+        assert [e["uuid"] for e in result] == [f"u{i}" for i in range(20)]
+
+
+class TestSkipReasons:
+    """A bare skip count cannot tell short clips from missing audio."""
+
+    def test_reasons_counter_records_why(self, tmp_path):
+        from collections import Counter
+
+        from listenr.build_dataset import validate_entry
+
+        reasons: Counter[str] = Counter()
+        # Missing a required field.
+        validate_entry({"uuid": "a", "audio_path": "x"}, 0.0, 0, reasons=reasons)
+        # Too short.
+        wav = tmp_path / "c.wav"
+        wav.write_bytes(b"")
+        validate_entry(
+            {"uuid": "b", "raw_transcription": "hi", "audio_path": str(wav), "duration_s": 0.1},
+            min_duration=1.0,
+            min_chars=0,
+            reasons=reasons,
+        )
+        # Audio not on disk.
+        validate_entry(
+            {"uuid": "c", "raw_transcription": "hello there", "audio_path": "/nope.wav", "duration_s": 5},
+            min_duration=0.0,
+            min_chars=0,
+            reasons=reasons,
+        )
+        assert sum(reasons.values()) == 3
+        joined = " ".join(reasons)
+        assert "missing field" in joined
+        assert "min-duration" in joined
+        assert "audio file missing" in joined
+
+    def test_counter_is_optional(self):
+        from listenr.build_dataset import validate_entry
+
+        assert validate_entry({"uuid": "a"}, 0.0, 0) is None
