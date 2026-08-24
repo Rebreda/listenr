@@ -68,6 +68,10 @@ install covers recording, transcription and dataset building; fine-tuning and
 the dataset importers live behind extras, listed in
 [docs/setup.md](https://github.com/Rebreda/listenr/blob/main/docs/setup.md).
 
+On an AMD GPU, install a ROCm torch before the `finetune` extra, or pip will
+resolve a CUDA wheel that cannot see your card. See
+[docs/setup.md](https://github.com/Rebreda/listenr/blob/main/docs/setup.md#amd-gpus-install-a-rocm-torch-first).
+
 Working on Listenr itself? Clone the repo and `uv pip install -e ".[dev]"` instead.
 
 **Once you have recordings, process & fine-tune:**

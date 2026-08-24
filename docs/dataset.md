@@ -198,3 +198,47 @@ Use `--keep-all` to annotate every clip instead of dropping non-matches.
 > Note that filtering only finds what's in the source: a lifestyle-speech
 > dataset has few technology clips no matter the threshold, so pick a source
 > that actually contains your target domain.
+
+## Splits from an imported corpus
+
+`build-dataset` keeps the train/dev/test split an imported corpus assigned,
+rather than reshuffling it. This is the default whenever any record carries a
+`source_split`, which the importers write.
+
+It matters more than it looks. Public corpora keep speakers disjoint across
+their splits on purpose. Reshuffling puts the same voice in train and test, so
+the model is scored on speakers it trained on and any WER improvement is
+partly an artefact. It also makes your number incomparable to every published
+baseline for that corpus, because you are no longer evaluating on its test set.
+
+Records with no `source_split`, including everything from `listenr record`, go
+to train. They can never reach dev or test, so they cannot affect an
+evaluation. The command reports how many were placed that way.
+
+To reshuffle everything anyway:
+
+```bash
+listenr build-dataset --no-preserve-splits --split 80/10/10
+```
+
+`--split` only sets the ratios for a reshuffle. It has no effect when splits
+are preserved.
+
+## Noise tag stripping changes the labels
+
+`strip_tags` is on by default and removes any bracketed or parenthesised span
+of 1 to 60 characters, so `(music)`, `[Applause]` and inline `[disfluency]`
+markers all go. That is usually what you want for training, but it does mean
+the label text no longer matches the corpus exactly, and a clip that is mostly
+markers can fall under `--min-chars` and be dropped entirely.
+
+`build-dataset` now reports why records were skipped, broken down by reason,
+so a large drop count is traceable:
+
+```
+Valid entries: 2195, skipped: 230
+  skipped 168: transcript under --min-chars (10) after tag stripping
+  skipped  62: shorter than --min-duration (1.0s)
+```
+
+Pass `--no-strip-tags` to keep the markers.

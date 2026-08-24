@@ -6,6 +6,7 @@
 #   podman compose run --rm build-dataset       # build HF dataset from manifest
 #   podman compose run --rm finetune            # fine-tune (defaults: bf16, 2000 steps)
 #   podman compose run --rm merge               # merge adapter → standalone model
+#   podman compose run --rm eval --compare-base # base vs fine-tuned on the test split
 #
 # Edit .env to override any path or GPU setting.
 # GPU passthrough requires the ROCm driver on the host.
@@ -13,6 +14,17 @@
 x-rocm-base: &rocm-base
   build: .
   image: listenr-rocm
+  # Inject .env into the container. Compose interpolates .env into this YAML
+  # by default, which is a different thing: without env_file, anything set
+  # there (notably HSA_OVERRIDE_GFX_VERSION) never reaches the process.
+  # A line left commented in .env stays unset here, which is what we want:
+  # HSA_OVERRIDE_GFX_VERSION="" is not the same as unset and breaks ROCm.
+  env_file:
+    - .env
+  # Run as the host UID so anything written to a bind mount is owned by you
+  # rather than a subuid. Applies to every service, not just finetune, or the
+  # outputs of build-dataset and merge come back root-ish.
+  userns_mode: "keep-id"
   cap_add:
     - SYS_PTRACE
   security_opt:
@@ -23,9 +35,6 @@ services:
   # ── fine-tune Whisper with LoRA ────────────────────────────────────────────
   finetune:
     <<: *rocm-base
-    # Run as the host UID so adapter checkpoints written to the bind mount are
-    # owned by you, not a subuid (which looks root-ish on the host).
-    userns_mode: "keep-id"
     ipc: host
     # AMD's recommended pattern: pass the whole /dev/dri directory and let
     # HIP_VISIBLE_DEVICES select. Auto-handles any single- or multi-GPU
@@ -61,9 +70,15 @@ services:
     volumes:
       # HF dataset produced by build-dataset
       - "${LISTENR_HOST_DATASET}:/data/dataset:z"
-      # Audio source: dataset Arrow files store absolute host paths to .wav
-      # clips, so mount LISTENR_HOST_DATA at the SAME path inside the container.
-      # (Avoid by rebuilding the dataset with `build-dataset --remap-audio-prefix`.)
+      # Audio source, mounted twice on purpose, because a dataset can carry
+      # either kind of path:
+      #   /data/listenr  matches the --remap-audio-prefix the build-dataset
+      #                  service applies, so container-built datasets resolve.
+      #   the host path  matches a dataset built on the host, whose Arrow files
+      #                  store absolute host paths.
+      # Without the first of these, a dataset built through compose fails in
+      # data.py sf.read() on every clip.
+      - "${LISTENR_HOST_DATA}:/data/listenr:z,ro"
       - "${LISTENR_HOST_DATA}:${LISTENR_HOST_DATA}:z,ro"
       # Adapter checkpoint output
       - "${LISTENR_HOST_FINETUNE}:/data/adapter:z"
@@ -95,6 +110,11 @@ services:
       - "${LISTENR_HOST_DATA}:/data/listenr:z"
       # Dataset output
       - "${LISTENR_HOST_DATASET}:/data/dataset:z"
+      # Listenr config. Without this, dataset.split, min_duration, min_chars and
+      # strip_tags silently fall back to defaults no matter what config.toml says.
+      - "${LISTENR_HOST_CONFIG}:/home/ubuntu/.config/listenr:z"
+    environment:
+      HOME: "/home/ubuntu"
     working_dir: /app
     # Defaults in entrypoint so `run SERVICE EXTRA_ARGS` can append flags
     # without wiping out the manifest/output paths. See note on finetune service.
@@ -109,6 +129,41 @@ services:
       - "--remap-audio-prefix=${LISTENR_HOST_DATA}/audio_clips:/data/listenr/audio_clips"
     command: []
 
+  # ── evaluate the merged model on the held-out test split ──────────────────
+  eval:
+    <<: *rocm-base
+    ipc: host
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - keep-groups
+    environment:
+      HIP_VISIBLE_DEVICES: "${HIP_VISIBLE_DEVICES:-0}"
+      TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: "${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-1}"
+      MIOPEN_USER_DB_PATH: "/tmp/miopen"
+      MIOPEN_CUSTOM_CACHE_DIR: "/tmp/miopen"
+      HOME: "/home/ubuntu"
+    volumes:
+      # Merged model produced by the merge service
+      - "${LISTENR_HOST_MERGED}:/data/merged:z,ro"
+      # Test split
+      - "${LISTENR_HOST_DATASET}:/data/dataset:z,ro"
+      # Audio, both path shapes, for the same reason as the finetune service
+      - "${LISTENR_HOST_DATA}:/data/listenr:z,ro"
+      - "${LISTENR_HOST_DATA}:${LISTENR_HOST_DATA}:z,ro"
+      - "${LISTENR_HOST_CONFIG}:/home/ubuntu/.config/listenr:z"
+      - "${HF_CACHE}:/home/ubuntu/.cache/huggingface:z"
+    working_dir: /app
+    # Defaults in entrypoint so `run SERVICE EXTRA_ARGS` can append flags such
+    # as --compare-base or --keyword without wiping the paths.
+    entrypoint:
+      - "listenr"
+      - "eval"
+      - "--model=/data/merged"
+      - "--dataset=/data/dataset"
+    command: []
+
   # ── merge LoRA adapter into base model → standalone merged model ──────────
   merge:
     <<: *rocm-base
@@ -118,13 +173,16 @@ services:
       # Force CPU-only execution — keeps ROCm HSA runtime fully uninitialised
       HIP_VISIBLE_DEVICES: "-1"
       CUDA_VISIBLE_DEVICES: "-1"
+      # Same home as the other services, so the shared HF cache mount lands in
+      # one place and expanduser('~') resolves somewhere the host UID owns.
+      HOME: "/home/ubuntu"
     volumes:
       # LoRA adapter produced by finetune (input)
       - "${LISTENR_HOST_FINETUNE}:/data/adapter:z"
       # Destination for the merged model (output)
       - "${LISTENR_HOST_MERGED}:/data/merged:z"
       # HuggingFace model cache — avoids re-downloading base model
-      - "${HF_CACHE}:/root/.cache/huggingface:z"
+      - "${HF_CACHE}:/home/ubuntu/.cache/huggingface:z"
     working_dir: /app
     # Defaults in entrypoint so `run SERVICE EXTRA_ARGS` can append flags.
     entrypoint:

@@ -133,17 +133,19 @@ def main() -> None:
                         help=f"Evaluate every N steps (default: {settings.finetune.eval_steps})")
     parser.add_argument("--save-steps",      type=int,   default=settings.finetune.save_steps,
                         help=f"Save checkpoint every N steps (default: {settings.finetune.save_steps})")
+    # BooleanOptionalAction, not store_true: these default to the config file,
+    # and store_true gives no way to turn off a value set there.
     parser.add_argument(
         "--fp16",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=settings.finetune.fp16,
-        help="Enable fp16 mixed precision (CUDA GPUs; not recommended for AMD ROCm)",
+        help="fp16 mixed precision (CUDA GPUs; not recommended for AMD ROCm)",
     )
     parser.add_argument(
         "--bf16",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=settings.finetune.bf16,
-        help="Enable bf16 mixed precision (recommended for AMD ROCm RDNA2+)",
+        help="bf16 mixed precision (recommended for AMD ROCm RDNA2+)",
     )
     parser.add_argument(
         "--report-to",
@@ -175,6 +177,12 @@ def main() -> None:
 
     from listenr.finetune.architectures import UnsupportedArchitecture, detect
     from listenr.finetune.data import make_processor, make_dataset, SpeechDataCollator
+    from listenr.finetune.preflight import (
+        check_all,
+        describe_accelerator,
+        describe_accelerator_line,
+        format_problems,
+    )
     from listenr.finetune.model import (
         load_base_model,
         make_lora_config,
@@ -183,6 +191,27 @@ def main() -> None:
         count_trainable_params,
     )
     from listenr.finetune.metrics import make_compute_metrics
+
+    # -----------------------------------------------------------------------
+    # 0. Pre-flight
+    # -----------------------------------------------------------------------
+    # These are seconds of work that otherwise surface as a traceback minutes
+    # in, after the dataset and the model have both loaded.
+    accelerator = describe_accelerator()
+    logger.info(describe_accelerator_line(accelerator))
+
+    problems = check_all(
+        fp16=args.fp16,
+        bf16=args.bf16,
+        eval_steps=args.eval_steps,
+        save_steps=args.save_steps,
+        accelerator=accelerator,
+    )
+    if problems:
+        logger.warning("Pre-flight found %d problem(s):\n%s", len(problems), format_problems(problems))
+    if any(p.severity == "error" for p in problems):
+        logger.error("Refusing to start. Fix the errors above, or pass --dry-run to re-check.")
+        sys.exit(1)
 
     # -----------------------------------------------------------------------
     # 1. Dataset
@@ -239,7 +268,10 @@ def main() -> None:
     )
 
     if args.dry_run:
-        logger.info("Dry run — exiting without training.")
+        logger.info(
+            "Dry run: dataset loaded, model built, pre-flight clean. "
+            "Exiting without training."
+        )
         return
 
     # -----------------------------------------------------------------------

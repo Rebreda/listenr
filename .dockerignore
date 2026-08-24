@@ -1,4 +1,7 @@
-.git
+# .git is needed: setuptools-scm derives the version from it, and without it
+# the build falls back to fallback_version and `listenr --version` reports
+# 0.0.0 inside the image. Excluding history would save space but makes the
+# image unable to say what it is.
 .venv
 .env
 __pycache__
@@ -11,5 +14,9 @@ build
 .mypy_cache
 .ruff_cache
 tests/
+# Docs are not needed in the image, but README.md is declared as `readme` in
+# pyproject.toml, so excluding it makes setuptools warn and install an empty
+# long description. Keep the README, drop the rest.
 *.md
+!README.md
 screenshot.png

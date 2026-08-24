@@ -33,8 +33,17 @@ customize it.
 
 ## Prerequisites
 
-- AMD GPU with ROCm drivers installed on the host (`rocm-smi` works)
-- Podman (`podman --version`)  - Docker works too with the same flags
+- AMD GPU with the kernel driver loaded, so `/dev/kfd` and `/dev/dri/renderD*`
+  exist. A host ROCm userspace is **not** required: the container ships the
+  whole thing, and `rocm-smi` need not be installed or work on the host.
+- Read and write access to those device nodes. Check with `ls -l /dev/kfd`.
+  If they are `crw-rw----` rather than `crw-rw-rw-`, add yourself to the
+  owning group (usually `render`) and log back in:
+  `sudo usermod -aG render $USER`. The compose file passes your existing
+  groups through with `keep-groups`, which cannot grant a group you are not
+  already in.
+- Podman (`podman --version`). Docker will **not** work with this compose
+  file: `userns_mode: keep-id` and `group_add: keep-groups` are podman-only.
 - ~50 GB free disk space (image + model cache + audio data + checkpoints)
 - Recordings collected on the host via `listenr record` ([recording.md](recording.md))
 
@@ -198,7 +207,7 @@ Output (~926 MB for whisper-small):
 | Flag | Default | Description |
 |---|---|---|
 | `--adapter PATH` | `~/listenr_finetune` | LoRA adapter directory |
-| `--output PATH` | `~/listenr_merged` | Destination for the merged model |
+| `--output PATH` | `~/listenr_finetune_merged` | Destination for the merged model. The compose flow overrides this to `/data/merged`, which is `$LISTENR_HOST_MERGED` on the host. |
 | `--dry-run` | off | Validate inputs and print plan without writing |
 
 ---
@@ -206,6 +215,11 @@ Output (~926 MB for whisper-small):
 ## 6. Evaluate
 
 ```bash
+# In the container, which is where the ROCm torch lives
+podman compose run --rm eval --compare-base
+podman compose run --rm eval --compare-base --keyword Claude --n 50
+
+# Or on the host, if you installed a ROCm torch there
 # Compare original vs fine-tuned on a single file
 listenr eval --audio path/to/clip.wav
 
@@ -268,7 +282,8 @@ print(asr("recording.wav")["text"])
 ### Selecting a GPU
 
 ```bash
-rocm-smi                              # list GPUs
+# rocm-smi lives in the image, so run it there rather than on the host
+podman compose run --rm --entrypoint rocm-smi finetune
 HIP_VISIBLE_DEVICES=1 podman compose run --rm finetune    # pin to GPU 1
 ```
 
@@ -282,16 +297,62 @@ RDNA3 (RX 7900 XTX/XT/GRE, 7800 XT, 7700 XT) and RDNA4 (RX 9070 family, 9060
 family), so on those cards leave the override unset. Try a run without it
 first; only reach for the override if ROCm reports the device as unsupported.
 
+Strix Halo (gfx1151) needs no override on ROCm 7.2. Measured on a Radeon
+8060S with the 7.2 image: `torch.cuda.get_device_name(0)` returns
+`AMD Radeon Graphics` and the capability is `(11, 5)`, which is gfx1151
+reporting itself correctly. Only set an override if your ROCm is older than
+the support your card needs.
+
 Where it is still needed, uncomment the relevant line in `.env`:
 
 ```
 HSA_OVERRIDE_GFX_VERSION=10.3.0   # RX 6000 series (RDNA2, gfx103x)
-HSA_OVERRIDE_GFX_VERSION=11.0.0   # RDNA3 cards ROCm does not list natively
-HSA_OVERRIDE_GFX_VERSION=11.5.1   # Strix Halo APUs (gfx1151), if needed
+HSA_OVERRIDE_GFX_VERSION=11.0.0   # cards your ROCm does not list natively
 ```
 
 > **Never** set `HSA_OVERRIDE_GFX_VERSION=""`  - an empty string is not
 > the same as unset and will crash ROCm at startup.
+
+> The value names the ISA you want to be treated as, not the one you have.
+> Setting a gfx1151 part to `11.5.1` is a no-op, because 11.5.1 is gfx1151.
+> `11.0.0` asks to be treated as gfx1100. Setting it on ROCm 7.2 does no harm
+> but is not needed, and telling people to set it implies it is required.
+
+### `--ipc=host` is required
+
+Allocations fail without it, and the error names memory rather than IPC, which
+sends you looking in the wrong place:
+
+```
+Memory critical error by agent node-0 ... Reason: Memory in use.
+```
+
+That appears for any allocation, including a 1024x1024 matmul on an otherwise
+idle GPU. The compose services that touch the GPU already set `ipc: host`, so
+`podman compose run` is unaffected. It matters when you run `podman run` by
+hand. This invocation is verified working on a Radeon 8060S with no sudo, no
+render group, no host ROCm and no gfx override:
+
+```bash
+podman run --rm --device=/dev/kfd --device=/dev/dri --ipc=host \
+  --group-add keep-groups --security-opt seccomp=unconfined listenr-rocm \
+  python3 -c "import torch; print(torch.cuda.get_device_name(0))"
+```
+
+### Why `--bf16` on AMD
+
+Measured on a Radeon 8060S, ROCm 7.2, torch 2.9.1+rocm7.2.0:
+
+| Precision | Size | Throughput |
+|---|---|---|
+| fp32 | 1024² | 2.35 TFLOP/s |
+| fp32 | 2048² | 2.38 TFLOP/s |
+| fp32 | 4096² | 2.45 TFLOP/s |
+| bf16 | 4096² | 23.69 TFLOP/s |
+| fp16 | 4096² | 22.90 TFLOP/s |
+
+bf16 is close to ten times fp32 on this part, which is why `--bf16` is the
+default in the compose entrypoint rather than a suggestion.
 
 ### APUs with unified memory (Strix Halo / Ryzen AI MAX)
 
@@ -318,6 +379,20 @@ amd-ttm --set 48          # GB of GPU-accessible shared memory
 Strix Halo needs Linux 6.18.4 or newer for the KFD driver fixes; on older
 kernels GPU compute initialization can fail outright. Fedora 43+, Ubuntu
 26.04 and Arch carry the fixes already.
+
+Two consequences specific to a shared pool:
+
+`torch.cuda.mem_get_info()` reports the unified aperture, not real VRAM. On a
+31 GiB machine it reports roughly 96 GiB. Anything that sizes a batch from that
+number will overcommit badly. Size from system RAM and the GTT limit instead.
+
+A local inference server competes with the trainer for the same memory. During
+testing, Lemonade was holding Whisper-Large-v3-Turbo on the iGPU at 4.6 GiB.
+Unload it before a training run:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/unload
+```
 
 Full detail: [AMD Strix Halo system optimization](https://rocm.docs.amd.com/en/docs-7.2.0/how-to/system-optimization/strixhalo.html).
 

@@ -157,3 +157,32 @@ class TestConsumersImport:
         import listenr.llm_processor  # noqa: F401
         import listenr.storage  # noqa: F401
         import listenr.transcript_utils  # noqa: F401
+
+
+class TestStaleIniWarning:
+    """An inert config.ini is worse than no config at all: it looks configured."""
+
+    def test_warns_when_ini_exists_and_toml_does_not(self, monkeypatch, tmp_path):
+        (tmp_path / "config.ini").write_text("[llm]\napi_base = http://localhost:8080/api/v1\n")
+        monkeypatch.setenv("LISTENR_CONFIG", str(tmp_path / "config.toml"))
+        with pytest.warns(RuntimeWarning, match="TOML only"):
+            Settings()
+
+    def test_silent_when_the_toml_exists(self, monkeypatch, tmp_path):
+        (tmp_path / "config.ini").write_text("[llm]\n")
+        toml = tmp_path / "config.toml"
+        toml.write_text("[whisper]\nmodel = \"Whisper-Base\"\n")
+        monkeypatch.setenv("LISTENR_CONFIG", str(toml))
+        import warnings as w
+
+        with w.catch_warnings():
+            w.simplefilter("error")
+            assert Settings().whisper.model == "Whisper-Base"
+
+    def test_silent_when_there_is_no_ini(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("LISTENR_CONFIG", str(tmp_path / "config.toml"))
+        import warnings as w
+
+        with w.catch_warnings():
+            w.simplefilter("error")
+            Settings()

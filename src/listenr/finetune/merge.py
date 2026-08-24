@@ -116,7 +116,10 @@ def merge_adapter(adapter_dir: Path, output_dir: Path, dry_run: bool = False) ->
     # ── load ──────────────────────────────────────────────────────────────────
     # Auto* resolves the concrete class from the checkpoint config, so Whisper
     # and Moonshine adapters merge through the same path.
-    logger.info(f"Loading base model '{base_model_id}' ...")
+    # device_map="cpu" is deliberate and not a fallback. Merging is pure matrix
+    # arithmetic, needs no GPU, and initialising the ROCm HSA runtime here has
+    # been observed to segfault inside PeftModel.merge_and_unload().
+    logger.info(f"Loading base model '{base_model_id}' on CPU ...")
     base_model = AutoModelForSpeechSeq2Seq.from_pretrained(
         base_model_id,
         device_map="cpu",

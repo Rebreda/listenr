@@ -44,6 +44,41 @@ uv pip install "listenr[finetune]"
 
 Running a command without its extra prints the exact install line you need.
 
+### AMD GPUs: install a ROCm torch first
+
+`listenr` never pins torch, so the `finetune` extra resolves it transitively
+from default PyPI, and default PyPI serves CUDA builds. On an AMD machine that
+wheel installs cleanly, imports without complaint, and reports no devices, so
+training silently falls back to CPU. Install a ROCm build **before** the extra:
+
+```bash
+uv pip install --torch-backend=rocm torch
+uv pip install "listenr[finetune]"
+```
+
+or with pip:
+
+```bash
+pip install --index-url https://download.pytorch.org/whl/rocm6.4 torch
+pip install "listenr[finetune]"
+```
+
+The ROCm wheels bundle their own runtime, so a host ROCm installation is not
+required. Only the kernel driver is.
+
+Check that it worked before spending a training run on it:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.version.hip, torch.cuda.is_available())"
+```
+
+A ROCm build prints a HIP version and `True`. A CUDA build on an AMD box
+prints something like `2.12.0+cu130 None False`. `listenr finetune` now refuses
+to start in that state rather than quietly training on CPU.
+
+For the container route instead, which avoids all of this, see
+[finetune-amd.md](finetune-amd.md).
+
 > For AMD GPU fine-tuning, use the ROCm container instead  - see [finetune-amd.md](finetune-amd.md).
 
 ---

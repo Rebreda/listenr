@@ -162,8 +162,13 @@ def tally_keywords(
 # Model + dataset loading (requires the finetune extras)
 # ---------------------------------------------------------------------------
 
-def make_asr(model_id_or_path: str | Path):
-    """Load an ASR pipeline for *model_id_or_path*, pinned to GPU if available."""
+def make_asr(model_id_or_path: str | Path, device: int | str | None = None):
+    """Load an ASR pipeline for *model_id_or_path*.
+
+    *device* follows the transformers convention: an int index, "cpu", or None
+    to pick automatically. Auto means GPU 0 when one is usable. ROCm torch
+    aliases the cuda namespace, so the same check covers AMD and NVIDIA.
+    """
     try:
         import torch
         from transformers import pipeline
@@ -182,8 +187,14 @@ def make_asr(model_id_or_path: str | Path):
     warnings.filterwarnings("ignore", message=".*attention_mask.*")
     warnings.filterwarnings("ignore", message=".*logits_process.*")
 
-    device = 0 if torch.cuda.is_available() else -1
-    logger.info(f"Loading {model_id_or_path} ({'cuda' if device == 0 else 'cpu'}) ...")
+    if device is None:
+        device = 0 if torch.cuda.is_available() else -1
+    elif device == "cpu":
+        device = -1
+    from listenr.finetune.preflight import describe_accelerator, describe_accelerator_line
+
+    logger.info(describe_accelerator_line(describe_accelerator()))
+    logger.info(f"Loading {model_id_or_path} (device={device}) ...")
     return pipeline(
         "automatic-speech-recognition",
         model=str(model_id_or_path),
@@ -355,8 +366,8 @@ def evaluate_split(args: argparse.Namespace) -> None:
         print(f"No evaluable clips in split '{args.split}'{kw_note}.", file=sys.stderr)
         sys.exit(1)
 
-    merged_asr = make_asr(args.model)
-    base_asr = make_asr(resolve_base_model(args.model, args.base_model)) if args.compare_base else None
+    merged_asr = make_asr(args.model, args.device)
+    base_asr = make_asr(resolve_base_model(args.model, args.base_model), args.device) if args.compare_base else None
 
     print(f"\nEvaluating {len(examples)} clips from split '{args.split}' of {dataset_path}")
     if args.keywords:
@@ -384,9 +395,9 @@ def evaluate_single(args: argparse.Namespace) -> None:
     if not args.audio.exists():
         print(f"ERROR: audio file not found: {args.audio}", file=sys.stderr)
         sys.exit(1)
-    base_asr = make_asr(resolve_base_model(args.model, args.base_model))
+    base_asr = make_asr(resolve_base_model(args.model, args.base_model), args.device)
     base_text = _transcribe(base_asr, args.audio)
-    merged_asr = make_asr(args.model)
+    merged_asr = make_asr(args.model, args.device)
     merged_text = _transcribe(merged_asr, args.audio)
     print()
     _print_columns("BASE", base_text, "FINE-TUNED (merged)", merged_text)
@@ -447,6 +458,14 @@ def main() -> None:
         action="store_true",
         help="Also transcribe every clip with the base model for a side-by-side "
         "comparison and per-model WER",
+    )
+    parser.add_argument(
+        "--device",
+        default=None,
+        help=(
+            "Device for inference: an index like 0, or 'cpu'. "
+            "Default picks GPU 0 when one is usable, otherwise CPU."
+        ),
     )
     parser.add_argument(
         "--audio",
