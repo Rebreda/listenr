@@ -180,26 +180,39 @@ repeating, with no `speech_stopped` between segments, and every saved clip the
 same length. The VAD never ends a segment, so the recording is chopped into
 arbitrary fixed-length pieces and sentences are cut mid-phrase.
 
-The cause is `vad.threshold` sitting below your room's noise floor, so the gate
-never closes. Compare the two. The debug output prints the RMS of every chunk:
+The gate never closes, because the measured level never drops below
+`vad.threshold`.
+
+The debug output prints the RMS of every chunk. Watch it while you are silent:
 
 ```
 [DEBUG] Mic: 9720 chunks sent, RMS=0.0317, ...
 ```
 
-Watch it while you are silent. That is your noise floor. `vad.threshold` must
-sit above it and below your speech. Set it in `config.toml`:
+That is your floor. `vad.threshold` has to sit above it and below your speech.
+
+If the floor barely moves when you speak, the problem is the signal, not the
+threshold. A capture device returning a constant offset pins the RMS at the
+offset regardless of what you say, and no threshold can separate the two.
+Listenr removes the offset before measuring, and reports when it does:
+
+```
+[DEBUG] Mic: 9720 chunks sent, RMS=0.0081 (removed 0.0313 offset), ...
+```
+
+If you see that note, the level you now see is real, and any threshold you set
+against an older reading will be far too high. Re-measure and set it in
+`config.toml`:
 
 ```toml
 [vad]
-threshold = 0.045
+threshold = 0.006
 ```
 
-If the floor is close to your speech level, raising the threshold alone will
-start clipping quiet word endings. Fix the input instead: check the gain on the
-device `audio.input_device` selects, move the microphone closer, or stop the
-noise source. Fan noise counts, and on a machine that is also training a model
-it will not be constant.
+If the floor is still close to your speech level after that, fix the input:
+check the gain on the device `audio.input_device` selects, move the microphone
+closer, or stop the noise source. Fan noise counts, and on a machine that is
+also training a model it will not be constant.
 
 `max_segment_s` is a backstop against Whisper's 30 second window, not a
 segmenter. If it is firing every time, VAD is not working.
