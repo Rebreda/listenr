@@ -135,10 +135,13 @@ def check_torch_build(acc: Accelerator) -> list[Problem]:
             Problem(
                 "error",
                 f"torch {acc.torch_version} is a ROCm build but reports no "
-                "usable device. If your GPU is not on AMD's support matrix, "
-                "retry once with HSA_OVERRIDE_GFX_VERSION set to a supported "
-                "ISA. For gfx1151 (Strix Halo) that is 11.0.0, which "
-                "masquerades as gfx1100. Setting it to your own ISA is a no-op.",
+                "usable device. Check that the container or session has "
+                "--ipc=host, which allocations need and whose absence reports "
+                "itself as a memory error. If your GPU predates your ROCm's "
+                "support matrix, retry once with HSA_OVERRIDE_GFX_VERSION set "
+                "to a supported ISA, for example 11.0.0 to be treated as "
+                "gfx1100. Setting it to your own ISA is a no-op, and on ROCm "
+                "7.2 and newer gfx1151 needs no override at all.",
             )
         ]
 

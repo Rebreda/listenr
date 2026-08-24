@@ -133,3 +133,39 @@ listenr finetune --batch-size 2 --grad-accum 8 --bf16
 
 The effective batch size is `batch_size × grad_accum`. Keeping that product the
 same (e.g. `8×2 = 16` → `2×8 = 16`) preserves training dynamics.
+
+### `podman build` hangs for a long time on `apt-get`
+
+The build sits on the `apt-get install libsndfile1 ffmpeg` layer for far
+longer than the twenty seconds or so it should take, with no error. Two causes
+seen on the same machine, both of which look identical from outside:
+
+A host firewall silently blocking DNS from inside the build. OpenSnitch does
+this: apt reports `Temporary failure resolving archive.ubuntu.com` and retries,
+and because the prompt never surfaces it reads as a broken Dockerfile. Check
+your firewall's event log, and allow the podman build or disable the firewall
+for the build.
+
+No usable IPv6 route while the mirror resolves to IPv6 only. Check from a
+container:
+
+```bash
+podman run --rm <image> sh -c \
+  'curl -s -o /dev/null -w "v4 %{http_code}\n" -4 http://archive.ubuntu.com/ubuntu/;
+   curl -s -o /dev/null -w "v6 %{http_code}\n" -6 http://archive.ubuntu.com/ubuntu/'
+```
+
+If v4 answers and v6 does not, force apt onto IPv4 for the build:
+
+```bash
+podman build --network=host -t listenr-rocm .
+```
+
+To tell a hang from slow progress, check whether the build is writing anything:
+
+```bash
+pgrep -af "apt-get install"
+find ~/.local/share/containers/storage/overlay -maxdepth 1 -newermt '-2 minutes' | wc -l
+```
+
+A count of zero over several minutes means it is stuck, not slow.
