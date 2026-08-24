@@ -250,7 +250,10 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
             print(f"  [ASR] {corrected_text}{cats}")
 
             if save:
-                if segment:
+                # A segment can hold chunks that assemble to no audio at all,
+                # which save_recording refuses rather than writing a
+                # zero-frame WAV with a transcript attached.
+                try:
                     record = save_recording(
                         segment, raw_text, corrected_text,
                         storage_base=STORAGE_BASE,
@@ -291,8 +294,8 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                         except Exception as exc:
                             if debug:
                                 print(f"  [DEBUG] batch retranscribe failed: {exc}")
-                else:
-                    print(f"  WARNING: pcm_buffer is empty -- no audio captured for this segment", flush=True)
+                except ValueError as exc:
+                    print(f"  WARNING: not saved -- {exc}", flush=True)
 
         elif msg_type == 'input_audio_buffer.committed':
             # Hand the spoken audio to the queue now, while it is still the

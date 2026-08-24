@@ -325,3 +325,52 @@ class TestRealRecordingLoop:
         records = self._saved(storage)
         assert len(records) == 1
         assert self._frames(records[0]["audio_path"]) == 6 * 1600
+
+
+class TestZeroDurationClips:
+    """Fourteen rows in a real manifest had a transcript and a zero-frame WAV."""
+
+    def test_validate_entry_reports_it_as_no_audio(self, tmp_path):
+        from collections import Counter
+
+        from listenr.build_dataset import validate_entry
+
+        wav = tmp_path / "empty.wav"
+        wav.write_bytes(b"RIFF")
+        reasons: Counter[str] = Counter()
+        entry = validate_entry(
+            {
+                "uuid": "empty",
+                "raw_transcription": "I'd love to be a teacher someday.",
+                "audio_path": str(wav),
+                "duration_s": 0.0,
+            },
+            min_duration=0.3,
+            min_chars=10,
+            reasons=reasons,
+        )
+        assert entry is None
+        assert any("no audio" in r for r in reasons)
+
+    def test_caught_even_when_min_duration_is_zero(self, tmp_path):
+        from listenr.build_dataset import validate_entry
+
+        wav = tmp_path / "empty.wav"
+        wav.write_bytes(b"RIFF")
+        assert (
+            validate_entry(
+                {
+                    "uuid": "empty",
+                    "raw_transcription": "a transcript with no audio behind it",
+                    "audio_path": str(wav),
+                    "duration_s": 0.0,
+                },
+                min_duration=0.0,
+                min_chars=0,
+            )
+            is None
+        )
+
+    def test_rate_check_does_not_pretend_to_judge_zero_duration(self):
+        """It returns None rather than dividing by zero; the audio check owns this."""
+        assert implausible_speech_rate("twenty five words here", 0.0) is None

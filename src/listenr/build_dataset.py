@@ -115,6 +115,18 @@ def validate_entry(
             return None
 
     duration = float(data.get("duration_s") or 0.0)
+
+    # A separate case from "too short", and a separate reason. Older sessions
+    # wrote zero-frame WAVs with a transcript attached: the file exists, so any
+    # check that tests for path existence passes, and only the frame count
+    # gives it away. Reporting these as "shorter than --min-duration" is true
+    # but points at the wrong problem, and --min-duration 0 would let them
+    # through entirely.
+    if duration == 0.0:
+        logger.debug(f"Skipping {data['uuid']}: clip contains no audio")
+        _drop("clip contains no audio (zero duration)")
+        return None
+
     if duration < min_duration:
         logger.debug(f"Skipping {data['uuid']}: duration {duration:.2f}s < {min_duration}s")
         _drop(f"shorter than --min-duration ({min_duration}s)")
