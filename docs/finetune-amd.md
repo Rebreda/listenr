@@ -264,6 +264,42 @@ With `--keyword`, you also get a per-model recall summary across all matching cl
 | `--base-model ID` | (auto from merged config) | Base model for comparison |
 | `--audio PATH` |  - | Compare base vs fine-tuned on a single file instead |
 | `--keyword WORD` |  - | Filter to clips with WORD in ground truth; repeatable |
+| `--output FILE` |  - | Write the full result as JSON (see below) |
+
+### Keeping the results
+
+Without `--output`, everything eval prints exists only in your terminal. A
+scrollback buffer is not a place to keep the one number a fine-tune exists to
+produce, and two runs you cannot diff are not comparable.
+
+```bash
+listenr eval --compare-base --keyword Claude --output results.json
+```
+
+The file holds what was printed plus what the printout compresses away: the
+listenr version, model and dataset paths, aggregate WER per model, per-keyword
+recall as named fields, and a per-clip array with each model's hypothesis
+against the ground truth. The per-clip rows are what make the aggregate
+auditable, and they let you re-score later under a different text
+normalization without re-running inference.
+
+Training records itself without a flag. Every `listenr finetune` run writes
+`run.json` beside the adapter with the resolved arguments, base model, dataset
+path and split sizes, trainable-parameter count, and the accelerator it ran
+on. It is written with `status: "started"` before the first step, so even a
+crashed run leaves evidence of what was attempted, and rewritten with
+`status: "completed"` at the end. `trainer_state.json` in each checkpoint dir
+holds the loss and WER curves (the HuggingFace trainer writes it), so the
+pair answers both questions an adapter directory raises: what produced this,
+and how did it go.
+
+The trainer also logs to tensorboard by default (`--report-to tensorboard`,
+under `runs/` in the output dir), which is real captured data most people do
+not realise they already have:
+
+```bash
+tensorboard --logdir ~/listenr_finetune/runs
+```
 
 ### Using the merged model directly
 

@@ -280,6 +280,24 @@ def main() -> None:
     output_dir = Path(args.output).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Record the invocation before training starts. trainer_state.json will
+    # hold the metrics but says nothing about what was run; without this, an
+    # adapter directory cannot tell you what produced it, and a crashed run
+    # leaves no evidence of what was attempted.
+    from listenr.finetune import report
+    run_record = report.finetune_run_record(
+        args=vars(args),
+        base_model=args.base_model,
+        architecture=arch.model_type,
+        dataset=str(dataset_path),
+        dataset_splits={k: len(v) for k, v in dataset.items()},
+        trainable_params=trainable,
+        total_params=total,
+        accelerator=describe_accelerator_line(accelerator),
+    )
+    run_record_path = output_dir / "run.json"
+    report.write_json(run_record_path, run_record)
+
     data_collator = SpeechDataCollator(
         processor=processor,
         decoder_start_token_id=model.config.decoder_start_token_id,
@@ -338,6 +356,10 @@ def main() -> None:
     logger.info(f"Saving LoRA adapter to {output_dir}")
     model.save_pretrained(str(output_dir))
     processor.save_pretrained(str(output_dir))
+
+    run_record["ended_utc"] = report.utc_now()
+    run_record["status"] = "completed"
+    report.write_json(run_record_path, run_record)
     logger.info("Done.")
 
 
