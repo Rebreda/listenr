@@ -26,6 +26,9 @@ Usage examples::
     # Single audio file — prints base vs fine-tuned side-by-side
     listenr eval --audio path/to/clip.wav
 
+    # Keep the result: everything printed, plus per-clip hypotheses, as JSON
+    listenr eval --compare-base --output results.json
+
 Requires the ``finetune`` optional dependencies::
 
     uv pip install -e ".[finetune]"
@@ -42,6 +45,7 @@ import textwrap
 import warnings
 from pathlib import Path
 
+from listenr.finetune import report
 from listenr.finetune.merge import DEFAULT_OUTPUT_DIR as DEFAULT_MERGED_DIR
 from listenr.settings import settings
 
@@ -50,6 +54,10 @@ logger = logging.getLogger("listenr.finetune.evaluate")
 
 DEFAULT_SPLIT = "test"
 DEFAULT_N = 50
+
+# The code says "merged"; the report says what a reader means by it. Keys in a
+# results file outlive the terminology of the code that wrote them.
+_PUBLIC_NAME = {"merged": "fine_tuned", "base": "base"}
 _COL_WIDTH = 40
 
 
@@ -377,18 +385,48 @@ def evaluate_split(args: argparse.Namespace) -> None:
     refs: list[str] = []
     hyps: dict[str, list[str]] = {"merged": [], "base": []}
     results = []
+    clip_records: list[dict] = []
     for i, row in enumerate(examples, 1):
         merged_text = _transcribe(merged_asr, row["audio_path"])
         base_text = _transcribe(base_asr, row["audio_path"]) if base_asr else None
-        results.append(
-            print_clip_result(i, len(examples), row, merged_text, base_text, args.keywords)
-        )
+        hit_maps = print_clip_result(i, len(examples), row, merged_text, base_text, args.keywords)
+        results.append(hit_maps)
         refs.append(row["corrected_transcription"])
         hyps["merged"].append(merged_text)
         if base_text is not None:
             hyps["base"].append(base_text)
+        if args.output:
+            hypotheses = {"fine_tuned": merged_text}
+            if base_text is not None:
+                hypotheses["base"] = base_text
+            clip_records.append(report.eval_clip_record(
+                row,
+                hypotheses,
+                {_PUBLIC_NAME[m]: hm for m, hm in hit_maps.items() if hm} if args.keywords else None,
+            ))
 
-    print_summary(refs, hyps, tally_keywords(results) if args.keywords else {})
+    keyword_tally = tally_keywords(results) if args.keywords else {}
+    print_summary(refs, hyps, keyword_tally)
+
+    if args.output:
+        wer_pct = {
+            _PUBLIC_NAME[name]: wer
+            for name, texts in hyps.items()
+            if texts and (wer := compute_wer(refs, texts)) is not None
+        }
+        path = report.write_json(args.output, report.eval_report(
+            mode="split",
+            model=str(args.model),
+            base_model=resolve_base_model(args.model, args.base_model) if base_asr else None,
+            dataset=str(dataset_path),
+            split=args.split,
+            n_requested=args.n,
+            keywords=args.keywords,
+            wer_pct=wer_pct,
+            keyword_recall={_PUBLIC_NAME[m]: t for m, t in keyword_tally.items()},
+            clips=clip_records,
+        ))
+        logger.info(f"Results written to {path}")
 
 
 def evaluate_single(args: argparse.Namespace) -> None:
@@ -401,6 +439,24 @@ def evaluate_single(args: argparse.Namespace) -> None:
     merged_text = _transcribe(merged_asr, args.audio)
     print()
     _print_columns("BASE", base_text, "FINE-TUNED (merged)", merged_text)
+
+    if args.output:
+        path = report.write_json(args.output, report.eval_report(
+            mode="single",
+            model=str(args.model),
+            base_model=resolve_base_model(args.model, args.base_model),
+            dataset=None,
+            split=None,
+            n_requested=None,
+            keywords=[],
+            wer_pct={},
+            keyword_recall={},
+            clips=[report.eval_clip_record(
+                {"audio_path": str(args.audio)},
+                {"fine_tuned": merged_text, "base": base_text},
+            )],
+        ))
+        logger.info(f"Results written to {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +528,14 @@ def main() -> None:
         type=Path,
         default=None,
         help="Compare base vs fine-tuned on a single audio file instead of a dataset split",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="Write the full result as JSON: aggregate WER, per-keyword recall, "
+        "and per-clip hypotheses. Without it, results exist only in the terminal.",
     )
     args = parser.parse_args()
 
