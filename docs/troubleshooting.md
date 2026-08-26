@@ -167,3 +167,65 @@ find ~/.local/share/containers/storage/overlay -maxdepth 1 -newermt '-2 minutes'
 ```
 
 A count of zero over several minutes means it is stuck, not slow.
+
+### Every clip is exactly `max_segment_s` long
+
+Symptom, from `listenr record --debug`:
+
+```
+max_segment_s (20.0s) reached after 20.1s - forcing commit
+```
+
+repeating, with no `speech_stopped` between segments, and every saved clip the
+same length. The VAD never ends a segment, so the recording is chopped into
+arbitrary fixed-length pieces and sentences are cut mid-phrase.
+
+The gate never closes, because the measured level never drops below
+`vad.threshold`.
+
+The debug output prints the RMS of every chunk. Watch it while you are silent:
+
+```
+[DEBUG] Mic: 9720 chunks sent, RMS=0.0317, ...
+```
+
+That is your floor. `vad.threshold` has to sit above it and below your speech.
+
+If the floor barely moves when you speak, the problem is the signal, not the
+threshold. A capture device returning a constant offset pins the RMS at the
+offset regardless of what you say, and no threshold can separate the two.
+Listenr removes the offset before measuring, and reports when it does:
+
+```
+[DEBUG] Mic: 9720 chunks sent, RMS=0.0081 (removed 0.0313 offset), ...
+```
+
+If you see that note, the level you now see is real, and any threshold you set
+against an older reading will be far too high. Re-measure and set it in
+`config.toml`:
+
+```toml
+[vad]
+threshold = 0.006
+```
+
+If the floor is still close to your speech level after that, fix the input:
+check the gain on the device `audio.input_device` selects, move the microphone
+closer, or stop the noise source. Fan noise counts, and on a machine that is
+also training a model it will not be constant.
+
+`max_segment_s` is a backstop against Whisper's 30 second window, not a
+segmenter. If it is firing every time, VAD is not working.
+
+### A clip is dropped as "audio and transcript do not match"
+
+`build-dataset` reports this in the skip breakdown, in two directions.
+
+`transcript belongs to different audio` means far more words than the clip
+could contain. `audio holds far more speech than the transcript` means the
+reverse, most often a 20 second clip labelled with two words, which is what a
+VAD that never fires produces.
+
+Both are dropped rather than trained on. A row whose audio and label disagree
+teaches the model either to invent words or to ignore its input.
+

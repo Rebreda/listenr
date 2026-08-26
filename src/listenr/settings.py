@@ -151,6 +151,7 @@ DEFAULT_CORRECTIONS: dict[str, str] = {
     "cloud code": "Claude Code",
     "clock code": "Claude Code",
     "cloud sonic": "Claude Sonnet",
+    "claude sonic": "Claude Sonnet",
     "cloud sonnet": "Claude Sonnet",
     "cloud opus": "Claude Opus",
     "cloud haiku": "Claude Haiku",

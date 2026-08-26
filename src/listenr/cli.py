@@ -26,7 +26,8 @@ from scipy.signal import resample_poly
 
 from listenr.unified_asr import LemonadeUnifiedASR
 from listenr.llm_processor import lemonade_llm_correct, lemonade_load_model, lemonade_unload_models
-from listenr.transcript_utils import implausible_speech_rate, is_hallucination, strip_noise_tags
+from listenr.audio import DCBlocker
+from listenr.transcript_utils import is_hallucination, speech_rate_mismatch, strip_noise_tags
 from listenr.storage import save_recording, patch_manifest_record
 from listenr.retranscribe import retranscribe_clip
 from listenr.settings import ASR_RATE, settings
@@ -105,6 +106,10 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
     """
     loop = asyncio.get_event_loop()
     chunks_sent = 0
+    # Some devices return audio with a constant offset. It is inaudible but it
+    # dominates the RMS, so the level never drops and voice activity detection
+    # never closes the gate. Remove it before anything measures or hears this.
+    dc_blocker = DCBlocker()
     with sd.InputStream(
         samplerate=CAPTURE_RATE,
         channels=CHANNELS,
@@ -124,6 +129,8 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
             if overflowed and debug:
                 print("  [DEBUG] WARNING: Mic buffer overflowed (CPU too slow?)")
             mono = audio_chunk[:, 0] if audio_chunk.ndim > 1 else audio_chunk
+            raw_rms = float(np.sqrt(np.mean(mono ** 2)))
+            mono = dc_blocker(mono)
             rms = float(np.sqrt(np.mean(mono ** 2)))
             if _NEED_RESAMPLE:
                 mono = resample_poly(mono, _RESAMPLE_UP, _RESAMPLE_DOWN).astype(np.float32)
@@ -131,8 +138,10 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
             pcm_buffer.append(pcm16)
             chunks_sent += 1
             if debug and chunks_sent % 24 == 0:
-                print(f"  [DEBUG] Mic: {chunks_sent} chunks sent, RMS={rms:.4f}, "
-                      f"pcm16_bytes={len(pcm16)}", flush=True)
+                offset = raw_rms - rms
+                print(f"  [DEBUG] Mic: {chunks_sent} chunks sent, RMS={rms:.4f}"
+                      + (f" (removed {offset:.4f} offset)" if offset > 0.002 else "")
+                      + f", pcm16_bytes={len(pcm16)}", flush=True)
             yield pcm16
 
 
@@ -263,14 +272,14 @@ async def _run(save: bool, show_raw: bool, debug: bool, retranscribe: bool = Fal
                         is_improved=is_improved,
                         categories=categories,
                     )
-                    rate = implausible_speech_rate(raw_text, record["duration_s"])
-                    if rate is not None:
+                    mismatch = speech_rate_mismatch(raw_text, record["duration_s"])
+                    if mismatch is not None:
+                        rate, why = mismatch
                         print(
-                            f"  WARNING: {record['audio_path']} pairs "
-                            f"{len(raw_text.split())} words with "
-                            f"{record['duration_s']}s ({rate:.0f} words/s). The "
-                            f"audio and transcript probably came from different "
-                            f"segments; build-dataset will drop this clip.",
+                            f"  WARNING: {len(raw_text.split())} words over "
+                            f"{record['duration_s']}s is {rate:.2f} words/s, "
+                            f"which means the {why}. build-dataset will drop "
+                            f"this clip.",
                             flush=True,
                         )
                     print(f"  [SAVED] {record['audio_path']} ({record['duration_s']}s)")
