@@ -303,6 +303,7 @@ def main() -> None:
         decoder_start_token_id=model.config.decoder_start_token_id,
         feature_key=arch.feature_key,
         pad_features=arch.pad_features,
+        pad_to_multiple=arch.pad_to_multiple,
     )
     compute_metrics = make_compute_metrics(processor.tokenizer)
 

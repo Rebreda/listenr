@@ -10,7 +10,8 @@ disagree on two things that reach into the data path:
   its natural length (``input_values``), so batches need real padding and an
   attention mask.
 * **Language/task tokens.** Whisper's tokenizer prepends them and its
-  generation config carries them; Moonshine is English-only and has neither.
+  generation config carries them; both Moonshine variants are English-only
+  and have neither.
 
 LoRA targets are *not* listed here: the minimal effective set (``q_proj``,
 ``v_proj``) is spelled the same in both, so ``settings.finetune`` stays the one
@@ -49,6 +50,10 @@ class Architecture:
     pad_features: bool
     #: Whether the tokenizer and generation config accept language/task tokens.
     supports_language_and_task: bool
+    #: Pad the encoder input up to a multiple of this many samples. Streaming
+    #: models consume fixed frames and reshape to them, so a batch padded to an
+    #: arbitrary length fails inside the encoder rather than at the boundary.
+    pad_to_multiple: int | None = None
 
 
 WHISPER = Architecture(
@@ -65,8 +70,24 @@ MOONSHINE = Architecture(
     supports_language_and_task=False,
 )
 
+# Moonshine's streaming variant. A separate model_type and a separate class in
+# transformers, not a flag on the offline one, but it eats the same raw
+# waveform and is English-only, so it takes the same path here. Its tokenizer
+# does carry a pad token, unlike the offline model's.
+MOONSHINE_STREAMING = Architecture(
+    model_type="moonshine_streaming",
+    feature_key="input_values",
+    pad_features=True,
+    supports_language_and_task=False,
+    # The encoder reshapes its input to [batch, -1, 80], one 5 ms frame at
+    # 16 kHz, so a length that is not a multiple of 80 raises there rather
+    # than being handled. Padding to the longest clip in a batch lands on a
+    # multiple only by luck.
+    pad_to_multiple=80,
+)
+
 SUPPORTED: dict[str, Architecture] = {
-    arch.model_type: arch for arch in (WHISPER, MOONSHINE)
+    arch.model_type: arch for arch in (WHISPER, MOONSHINE, MOONSHINE_STREAMING)
 }
 
 
@@ -113,8 +134,11 @@ def detect(model_id: str) -> Architecture:
 
 
 def _from_name(model_id: str) -> Architecture:
-    lowered = model_id.lower()
-    for arch in SUPPORTED.values():
+    # Hub ids separate words with hyphens and model_type uses underscores, so
+    # compare with both flattened. Longest first, or "moonshine-streaming-small"
+    # matches the offline "moonshine" and silently picks the wrong family.
+    lowered = model_id.lower().replace("-", "_")
+    for arch in sorted(SUPPORTED.values(), key=lambda a: -len(a.model_type)):
         if arch.model_type in lowered:
             return arch
     raise UnsupportedArchitecture(
