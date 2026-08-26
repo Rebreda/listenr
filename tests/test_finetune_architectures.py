@@ -18,8 +18,8 @@ from listenr.finetune.architectures import (
 
 
 class TestArchitectureTable:
-    def test_whisper_and_moonshine_are_registered(self):
-        assert set(SUPPORTED) == {"whisper", "moonshine"}
+    def test_every_supported_family_is_registered(self):
+        assert set(SUPPORTED) == {"whisper", "moonshine", "moonshine_streaming"}
 
     def test_whisper_takes_prepadded_log_mel(self):
         assert WHISPER.feature_key == "input_features"
@@ -74,8 +74,11 @@ class TestDetect:
 
     def test_unrecognisable_name_is_a_clear_error(self, monkeypatch):
         self._model_type(monkeypatch, None)
-        with pytest.raises(UnsupportedArchitecture, match="moonshine, whisper"):
+        with pytest.raises(UnsupportedArchitecture) as exc:
             detect("some-org/mystery-asr")
+        # The error must list what is supported, whatever that set becomes.
+        for family in SUPPORTED:
+            assert family in str(exc.value)
 
 
 class TestMoonshineBatchFeedsTheModel:
@@ -252,3 +255,108 @@ class TestPadToken:
         processor = self._processor()
         _ensure_pad_token(processor, "some-org/mystery-asr")
         assert processor.tokenizer.pad_token is None
+
+
+class TestMoonshineStreaming:
+    """The streaming variant is a separate model_type, not a flag on the offline one."""
+
+    def test_registered(self):
+        from listenr.finetune.architectures import MOONSHINE_STREAMING, SUPPORTED
+
+        assert SUPPORTED["moonshine_streaming"] is MOONSHINE_STREAMING
+
+    def test_takes_the_raw_waveform_like_offline_moonshine(self):
+        from listenr.finetune.architectures import MOONSHINE, MOONSHINE_STREAMING
+
+        assert MOONSHINE_STREAMING.feature_key == MOONSHINE.feature_key == "input_values"
+        assert MOONSHINE_STREAMING.pad_features is True
+
+    def test_pads_to_the_frame_size(self):
+        """The encoder reshapes to [batch, -1, 80] and raises on anything else."""
+        from listenr.finetune.architectures import MOONSHINE_STREAMING
+
+        assert MOONSHINE_STREAMING.pad_to_multiple == 80
+
+    def test_only_streaming_needs_frame_alignment(self):
+        from listenr.finetune.architectures import MOONSHINE, WHISPER
+
+        assert WHISPER.pad_to_multiple is None
+        assert MOONSHINE.pad_to_multiple is None
+
+    def test_name_detection_prefers_the_more_specific_family(self, monkeypatch):
+        """"moonshine-streaming-small" contains "moonshine"; longest must win."""
+        from listenr.finetune.architectures import MOONSHINE_STREAMING, detect
+
+        monkeypatch.setattr(
+            "listenr.finetune.architectures.model_type_of", lambda model_id: None
+        )
+        assert detect("moonshine-ai/moonshine-streaming-small") is MOONSHINE_STREAMING
+
+    def test_offline_moonshine_still_resolves(self, monkeypatch):
+        from listenr.finetune.architectures import MOONSHINE, detect
+
+        monkeypatch.setattr(
+            "listenr.finetune.architectures.model_type_of", lambda model_id: None
+        )
+        assert detect("UsefulSensors/moonshine-base") is MOONSHINE
+
+
+class TestFrameAlignedCollation:
+    """A batch padded to the longest clip lands on a frame boundary only by luck."""
+
+    @staticmethod
+    def _collator(pad_to_multiple):
+        # Needs the finetune extras; CI installs only the dev extra.
+        torch = pytest.importorskip("torch")
+        transformers = pytest.importorskip("transformers")
+        Wav2Vec2FeatureExtractor = transformers.Wav2Vec2FeatureExtractor
+
+        from listenr.finetune.data import SpeechDataCollator
+
+        class Processor:
+            pass
+
+        processor = Processor()
+        processor.feature_extractor = Wav2Vec2FeatureExtractor(
+            feature_size=1, sampling_rate=16_000, padding_value=0.0, return_attention_mask=True
+        )
+
+        class Tokenizer:
+            def pad(self, encoded, return_tensors=None):
+                rows = [i["input_ids"] for i in encoded]
+                width = max(len(r) for r in rows)
+                out = type("P", (), {})()
+                out.input_ids = torch.tensor([r + [0] * (width - len(r)) for r in rows])
+                out.attention_mask = torch.tensor(
+                    [[1] * len(r) + [0] * (width - len(r)) for r in rows]
+                )
+                return out
+
+        processor.tokenizer = Tokenizer()
+        return SpeechDataCollator(
+            processor=processor,
+            decoder_start_token_id=1,
+            feature_key="input_values",
+            pad_features=True,
+            pad_to_multiple=pad_to_multiple,
+        )
+
+    def test_batch_is_padded_up_to_the_frame_size(self):
+        batch = self._collator(80)(
+            [
+                {"input_values": np.zeros(16_037, dtype="float32"), "labels": [5]},
+                {"input_values": np.zeros(9_000, dtype="float32"), "labels": [6]},
+            ]
+        )
+        length = batch["input_values"].shape[1]
+        assert length % 80 == 0
+        assert length >= 16_037
+
+    def test_without_it_the_batch_keeps_a_ragged_length(self):
+        batch = self._collator(None)(
+            [
+                {"input_values": np.zeros(16_037, dtype="float32"), "labels": [5]},
+                {"input_values": np.zeros(9_000, dtype="float32"), "labels": [6]},
+            ]
+        )
+        assert batch["input_values"].shape[1] == 16_037

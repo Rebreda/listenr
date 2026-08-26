@@ -276,6 +276,7 @@ class SpeechDataCollator:
     decoder_start_token_id: int
     feature_key: str = "input_features"
     pad_features: bool = False
+    pad_to_multiple: int | None = None
 
     def __call__(self, features: list[dict]) -> dict:
         try:
@@ -293,6 +294,8 @@ class SpeechDataCollator:
         pad_kwargs: dict[str, Any] = {"return_tensors": "pt"}
         if self.pad_features:
             pad_kwargs.update(padding="longest", return_attention_mask=True)
+            if self.pad_to_multiple:
+                pad_kwargs["pad_to_multiple_of"] = self.pad_to_multiple
         batch = self.processor.feature_extractor.pad(input_batch, **pad_kwargs)
 
         # --- labels (variable length → pad + mask) ---
