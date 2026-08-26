@@ -306,9 +306,10 @@ class TestFrameAlignedCollation:
 
     @staticmethod
     def _collator(pad_to_multiple):
-        import numpy as np
-        import torch
-        from transformers import Wav2Vec2FeatureExtractor
+        # Needs the finetune extras; CI installs only the dev extra.
+        torch = pytest.importorskip("torch")
+        transformers = pytest.importorskip("transformers")
+        Wav2Vec2FeatureExtractor = transformers.Wav2Vec2FeatureExtractor
 
         from listenr.finetune.data import SpeechDataCollator
 
@@ -341,8 +342,6 @@ class TestFrameAlignedCollation:
         )
 
     def test_batch_is_padded_up_to_the_frame_size(self):
-        import numpy as np
-
         batch = self._collator(80)(
             [
                 {"input_values": np.zeros(16_037, dtype="float32"), "labels": [5]},
@@ -354,8 +353,6 @@ class TestFrameAlignedCollation:
         assert length >= 16_037
 
     def test_without_it_the_batch_keeps_a_ragged_length(self):
-        import numpy as np
-
         batch = self._collator(None)(
             [
                 {"input_values": np.zeros(16_037, dtype="float32"), "labels": [5]},
