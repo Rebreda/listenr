@@ -142,31 +142,22 @@ Full list: `podman compose run --rm finetune --help`.
 
 ### Choosing a base model
 
-Listenr fine-tunes two encoder-decoder families, and picks the right data
-pipeline for whichever one `--base-model` names:
-
-| Family | Example ids | Notes |
-|---|---|---|
-| Whisper | `openai/whisper-tiny` … `openai/whisper-large-v3-turbo` | Multilingual; `--language` and `--task` apply |
-| Moonshine | `UsefulSensors/moonshine-tiny`, `UsefulSensors/moonshine-base` | English-only, much smaller, built for edge and low-latency use; `--language`/`--task` are ignored |
+Three families work, and `--base-model` is the only thing that changes:
 
 ```bash
 podman compose run --rm finetune --base-model UsefulSensors/moonshine-base
+podman compose run --rm finetune --base-model moonshine-ai/moonshine-streaming-small
 ```
 
-Moonshine is the cheaper experiment: `moonshine-tiny` is 27M parameters
-against `whisper-small`'s 244M, so a run finishes far sooner and fits in much
-less VRAM. Whisper remains the better choice for multilingual work or when you
-need the accuracy of the large checkpoints.
+Whisper is the multilingual all-rounder. Moonshine is the cheaper experiment,
+`moonshine-tiny` being 27M parameters against `whisper-small`'s 244M, so a run
+finishes far sooner in far less memory. The streaming variants carry their own
+neural voice activity detection when served, which is why Lemonade uses one for
+live transcription.
 
-The two differ in what the encoder consumes. Whisper takes a log-Mel
-spectrogram padded to a fixed 30 s window; Moonshine takes the raw waveform at
-its natural length. That is why the collator pads Moonshine batches and not
-Whisper ones. `listenr merge` and `listenr eval` both detect the family from
-the checkpoint, so the rest of the flow is unchanged.
-
-CTC and transducer models (Parakeet, Wav2Vec2) are **not** supported: they use
-a different loss and label layout, so they need more than a new table entry.
+`merge` and `eval` read the family from the checkpoint, so the rest of the flow
+is unchanged. Full detail on what differs between them, and what to do to add
+another, is in [architectures.md](architectures.md).
 
 > **Compose gotcha:** `podman compose run SERVICE EXTRA_ARGS` *replaces*
 > the `command:` list but leaves `entrypoint:` alone. This repo puts the

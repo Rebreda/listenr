@@ -102,7 +102,7 @@ See [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.
 
 **Auto-correction** - A local LLM cleans up punctuation, grammar, and homophones, producing a higher-quality training corpus than raw Whisper output alone.
 
-**Dataset & fine-tuning** - Listenr saves each utterance as a `.wav` clip and a line in `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace format. Another command fine-tunes any `openai/whisper-*` or `UsefulSensors/moonshine-*` model using LoRA (works on AMD and NVIDIA GPUs via Podman). Moonshine is the smaller, English-only, edge-oriented option; Whisper is the multilingual all-rounder.
+**Dataset & fine-tuning** - Listenr saves each utterance as a `.wav` clip and a line in `manifest.jsonl`. One command builds train/dev/test splits in HuggingFace format. Another command fine-tunes Whisper, Moonshine or Moonshine streaming models using LoRA (works on AMD and NVIDIA GPUs via Podman). Moonshine is the smaller, English-only, edge-oriented option; Whisper is the multilingual all-rounder.
 
 **Deployment** - `listenr merge` folds the LoRA adapter into a self-contained model that loads with plain `transformers`. No PEFT dependency. Run inference locally or deploy it anywhere.
 
@@ -132,6 +132,7 @@ without its extra prints the install line you need.
 | [docs/configuration.md](https://github.com/Rebreda/listenr/blob/main/docs/configuration.md) | Full `config.toml` reference, VAD tuning, available models |
 | [docs/recording.md](https://github.com/Rebreda/listenr/blob/main/docs/recording.md) | CLI usage, how recording works, batch transcription |
 | [docs/dataset.md](https://github.com/Rebreda/listenr/blob/main/docs/dataset.md) | Building train/dev/test splits, importing public corpora, and filtering by topic |
+| [docs/architectures.md](https://github.com/Rebreda/listenr/blob/main/docs/architectures.md) | Which models can be fine-tuned, and how Whisper and Moonshine diverge |
 | [docs/finetune-amd.md](https://github.com/Rebreda/listenr/blob/main/docs/finetune-amd.md) | Fine-tuning on an AMD GPU via ROCm and Podman, merging, and evaluation |
 | [docs/troubleshooting.md](https://github.com/Rebreda/listenr/blob/main/docs/troubleshooting.md) | Common errors and fixes |
 
