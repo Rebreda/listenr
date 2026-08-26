@@ -5,11 +5,15 @@ so it runs offline: it proves the collator's output actually feeds the model,
 which is the part a mock cannot check.
 """
 
+import dataclasses
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from listenr.finetune.architectures import (
     MOONSHINE,
+    MOONSHINE_STREAMING,
     SUPPORTED,
     WHISPER,
     UnsupportedArchitecture,
@@ -360,3 +364,36 @@ class TestFrameAlignedCollation:
             ]
         )
         assert batch["input_values"].shape[1] == 16_037
+
+
+class TestArchitectureDocsStayAccurate:
+    """docs/architectures.md is a table of the real fields, so it can drift.
+
+    A wrong table here is worse than no table: it tells someone adding a family
+    that they have covered every difference when they have not.
+    """
+
+    DOC = Path(__file__).parent.parent / "docs" / "architectures.md"
+
+    def test_every_family_is_documented(self):
+        doc = self.DOC.read_text()
+        missing = [name for name in SUPPORTED if f"`{name}`" not in doc]
+        assert not missing, f"not in docs/architectures.md: {missing}"
+
+    def test_every_divergence_field_is_documented(self):
+        """Adding a field to Architecture means adding a row to the table."""
+        doc = self.DOC.read_text()
+        documented = {f.name for f in dataclasses.fields(WHISPER) if f"`{f.name}`" in doc}
+        actual = {f.name for f in dataclasses.fields(WHISPER)} - {"model_type"}
+        assert actual <= documented, f"undocumented fields: {actual - documented}"
+
+    def test_the_table_values_match_the_code(self):
+        doc = self.DOC.read_text()
+        # The streaming frame size is the one number a reader would act on.
+        assert str(MOONSHINE_STREAMING.pad_to_multiple) in doc
+        assert MOONSHINE.feature_key in doc
+        assert WHISPER.feature_key in doc
+
+    def test_unsupported_families_are_named_as_unsupported(self):
+        doc = self.DOC.read_text().lower()
+        assert "parakeet" in doc and "not** supported" in self.DOC.read_text()
