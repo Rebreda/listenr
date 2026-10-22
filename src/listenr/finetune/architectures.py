@@ -10,8 +10,9 @@ disagree on two things that reach into the data path:
   its natural length (``input_values``), so batches need real padding and an
   attention mask.
 * **Language/task tokens.** Whisper's tokenizer prepends them and its
-  generation config carries them; both Moonshine variants are English-only
-  and have neither.
+  generation config carries them. Moonshine has neither: each checkpoint
+  speaks one language (English, or a moonshine-ai/*-<lang> variant), and
+  fine-tuning teaches it another without any token to select it.
 
 LoRA targets are *not* listed here: the minimal effective set (``q_proj``,
 ``v_proj``) is spelled the same in both, so ``settings.finetune`` stays the one
@@ -72,7 +73,7 @@ MOONSHINE = Architecture(
 
 # Moonshine's streaming variant. A separate model_type and a separate class in
 # transformers, not a flag on the offline one, but it eats the same raw
-# waveform and is English-only, so it takes the same path here. Its tokenizer
+# waveform and has no language tokens, so it takes the same path here. Its tokenizer
 # does carry a pad token, unlike the offline model's.
 MOONSHINE_STREAMING = Architecture(
     model_type="moonshine_streaming",

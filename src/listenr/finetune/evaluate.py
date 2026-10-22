@@ -246,7 +246,7 @@ def _generate_kwargs(model_id_or_path: str | Path) -> dict:
 
     Base and merged models must be decoded the same way to be compared
     fairly. Language and task tokens only exist on multilingual families.
-    Passing them to an English-only model (Moonshine) is an error, so they
+    Passing them to a model without them (Moonshine) is an error, so they
     are omitted there.
     """
     from listenr.finetune.architectures import detect

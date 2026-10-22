@@ -48,7 +48,7 @@ strip_tags = true       # strip noise tags like (music)
 [finetune]
 # openai/whisper-* or UsefulSensors/moonshine-*
 base_model = "openai/whisper-small"
-language = "english"    # Whisper only; Moonshine is English-only
+language = "english"    # Whisper only; Moonshine has no language tokens
 task = "transcribe"     # transcribe | translate (Whisper only)
 method = "lora"         # lora (adapter, then merge) | full (every weight, no merge)
 from_scratch = false    # random weights in base_model's architecture; needs method = "full"

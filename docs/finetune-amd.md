@@ -150,7 +150,7 @@ pipeline for whichever one `--base-model` names:
 | Family | Example ids | Notes |
 |---|---|---|
 | Whisper | `openai/whisper-tiny` … `openai/whisper-large-v3-turbo` | Multilingual; `--language` and `--task` apply |
-| Moonshine | `UsefulSensors/moonshine-tiny`, `UsefulSensors/moonshine-base` | English-only, much smaller, built for edge and low-latency use; `--language`/`--task` are ignored |
+| Moonshine | `UsefulSensors/moonshine-tiny`, `UsefulSensors/moonshine-base`, per-language `moonshine-ai/moonshine-{tiny,base}-<lang>` | One language per checkpoint, much smaller, built for edge and low-latency use. No language tokens, so `--language`/`--task` are ignored; fine-tune a checkpoint on another language's data to teach it that language |
 
 ```bash
 podman compose run --rm finetune --base-model UsefulSensors/moonshine-base

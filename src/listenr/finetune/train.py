@@ -92,8 +92,8 @@ def main() -> None:
         "--language",
         default=settings.finetune.language,
         help=(
-            "Target language for the processor; ignored by English-only models "
-            f"such as Moonshine (default: {settings.finetune.language})"
+            "Target language for the processor; ignored by Moonshine, which has "
+            f"no language tokens (default: {settings.finetune.language})"
         ),
     )
     parser.add_argument(
@@ -101,8 +101,8 @@ def main() -> None:
         default=settings.finetune.task,
         choices=["transcribe", "translate"],
         help=(
-            "Task token prepended during tokenisation; ignored by English-only "
-            f"models such as Moonshine (default: {settings.finetune.task})"
+            "Task token prepended during tokenisation; ignored by Moonshine, "
+            f"which has no task tokens (default: {settings.finetune.task})"
         ),
     )
     parser.add_argument(
@@ -272,7 +272,7 @@ def main() -> None:
     model = load_base_model(args.base_model, from_scratch=args.from_scratch)
 
     # Set generation config to avoid deprecation warnings and force correct
-    # tokens. English-only families (Moonshine) have no language/task tokens.
+    # tokens. Moonshine has no language/task tokens.
     if arch.supports_language_and_task:
         model.generation_config.language = args.language
         model.generation_config.task = args.task

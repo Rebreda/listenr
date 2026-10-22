@@ -110,8 +110,8 @@ class FinetuneSettings(BaseModel):
     # Any encoder-decoder ASR checkpoint listenr knows how to fine-tune:
     # openai/whisper-* or UsefulSensors/moonshine-*.
     base_model: str = "openai/whisper-small"
-    # language and task are Whisper-only; Moonshine is English-only and
-    # ignores both.
+    # language and task are Whisper-only; Moonshine has no language or task
+    # tokens and ignores both.
     language: str = "english"
     task: Literal["transcribe", "translate"] = "transcribe"
     # "lora" trains a small adapter on top of the base weights; "full" updates

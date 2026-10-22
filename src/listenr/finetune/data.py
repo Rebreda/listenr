@@ -53,7 +53,7 @@ def make_processor(
     language:
         Target language, e.g. ``"english"``.  Passed to the tokenizer so the
         correct language token is prepended during encoding.  Ignored by
-        English-only families such as Moonshine.
+        families without language tokens, such as Moonshine.
     task:
         ``"transcribe"`` (default) or ``"translate"``.  Ignored as above.
     architecture:
