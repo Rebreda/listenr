@@ -154,3 +154,20 @@ class TestComputeWer:
         pytest.importorskip("transformers")
         assert compute_wer([], []) is None
         assert compute_wer([""], ["something"]) is None
+
+    def test_english_normalizer_strips_diacritics(self):
+        pytest.importorskip("jiwer")
+        pytest.importorskip("transformers")
+        # Welsh "tŷ" (house) and "ty" are different words, but the English
+        # normalizer folds them together and hides the error.
+        assert compute_wer(["mae'r tŷ yn fawr"], ["mae'r ty yn fawr"]) == 0.0
+
+    def test_basic_normalizer_keeps_diacritics(self):
+        pytest.importorskip("jiwer")
+        pytest.importorskip("transformers")
+        assert compute_wer(["Mae'r tŷ yn fawr."], ["mae'r tŷ yn fawr"], "basic") == 0.0
+        assert compute_wer(["mae'r tŷ yn fawr"], ["mae'r ty yn fawr"], "basic") > 0.0
+
+    def test_unknown_normalizer_raises(self):
+        with pytest.raises(ValueError):
+            compute_wer(["a"], ["a"], "welsh")
