@@ -101,6 +101,7 @@ def eval_report(
     wer_pct: dict[str, float],
     keyword_recall: dict[str, dict[str, list[int]]],
     clips: list[dict],
+    wer_normalization: str = "english",
 ) -> dict:
     """Assemble the full evaluation result.
 
@@ -119,7 +120,7 @@ def eval_report(
         "n_requested": n_requested,
         "n_evaluated": len(clips),
         "keywords": list(keywords),
-        "wer_normalization": "whisper_english",
+        "wer_normalization": f"whisper_{wer_normalization}",
         # Two decimals: a corpus WER's third decimal is noise, and a results
         # file should not imply precision the sample size cannot support.
         "wer_pct": {m: round(v, 2) for m, v in wer_pct.items()},

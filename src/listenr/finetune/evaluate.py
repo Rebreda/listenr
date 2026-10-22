@@ -54,6 +54,7 @@ logger = logging.getLogger("listenr.finetune.evaluate")
 
 DEFAULT_SPLIT = "test"
 DEFAULT_N = 50
+NORMALIZERS = ("english", "basic")
 
 # The code says "merged"; the report says what a reader means by it. Keys in a
 # results file outlive the terminology of the code that wrote them.
@@ -130,19 +131,32 @@ def select_examples(
     return selected
 
 
-def compute_wer(refs: list[str], hyps: list[str]) -> float | None:
-    """Corpus WER (%) with Whisper's official English text normalization.
+def compute_wer(refs: list[str], hyps: list[str], normalizer: str = "english") -> float | None:
+    """Corpus WER (%) after Whisper's text normalization.
+
+    *normalizer* is ``"english"`` (Whisper's English normalizer, which also
+    standardizes spellings and numbers) or ``"basic"`` (lowercase and strip
+    punctuation only, keeping diacritics). Use ``"basic"`` for any other
+    language: the English one strips diacritics and rewrites English words.
 
     Returns None when there are no usable reference/hypothesis pairs or when
     the optional scoring dependencies are missing.
     """
+    if normalizer not in NORMALIZERS:
+        raise ValueError(f"unknown normalizer {normalizer!r}; expected one of {NORMALIZERS}")
     try:
         import jiwer
-        from transformers.models.whisper.english_normalizer import EnglishTextNormalizer
+        from transformers.models.whisper.english_normalizer import (
+            BasicTextNormalizer,
+            EnglishTextNormalizer,
+        )
     except ImportError:
         return None
 
-    normalize = EnglishTextNormalizer({})
+    if normalizer == "english":
+        normalize = EnglishTextNormalizer({})
+    else:
+        normalize = BasicTextNormalizer(remove_diacritics=False)
     pairs = [(normalize(r), normalize(h)) for r, h in zip(refs, hyps)]
     pairs = [(r, h) for r, h in pairs if r]
     if not pairs:
@@ -329,16 +343,17 @@ def print_summary(
     refs: list[str],
     hyps: dict[str, list[str]],
     keyword_tally: dict[str, dict[str, list[int]]],
+    normalizer: str = "english",
 ) -> None:
     print(f"\n{'─' * 90}")
     wer_rows = [
-        (name, compute_wer(refs, texts))
+        (name, compute_wer(refs, texts, normalizer))
         for name, texts in (("base", hyps.get("base", [])), ("fine-tuned", hyps["merged"]))
         if texts
     ]
     wer_rows = [(name, wer) for name, wer in wer_rows if wer is not None]
     if wer_rows:
-        print("\n  WER vs ground truth (Whisper English normalization)")
+        print(f"\n  WER vs ground truth (Whisper {normalizer} normalization)")
         for name, wer in wer_rows:
             print(f"    {name:<12}  {wer:.1f}%")
 
@@ -406,13 +421,13 @@ def evaluate_split(args: argparse.Namespace) -> None:
             ))
 
     keyword_tally = tally_keywords(results) if args.keywords else {}
-    print_summary(refs, hyps, keyword_tally)
+    print_summary(refs, hyps, keyword_tally, args.normalizer)
 
     if args.output:
         wer_pct = {
             _PUBLIC_NAME[name]: wer
             for name, texts in hyps.items()
-            if texts and (wer := compute_wer(refs, texts)) is not None
+            if texts and (wer := compute_wer(refs, texts, args.normalizer)) is not None
         }
         path = report.write_json(args.output, report.eval_report(
             mode="split",
@@ -423,6 +438,7 @@ def evaluate_split(args: argparse.Namespace) -> None:
             n_requested=args.n,
             keywords=args.keywords,
             wer_pct=wer_pct,
+            wer_normalization=args.normalizer,
             keyword_recall={_PUBLIC_NAME[m]: t for m, t in keyword_tally.items()},
             clips=clip_records,
         ))
@@ -522,6 +538,15 @@ def main() -> None:
             "Device for inference: an index like 0, or 'cpu'. "
             "Default picks GPU 0 when one is usable, otherwise CPU."
         ),
+    )
+    parser.add_argument(
+        "--normalizer",
+        choices=NORMALIZERS,
+        default="english",
+        help="Text normalization applied before scoring WER. 'english' is "
+        "Whisper's English normalizer; use 'basic' for any other language, "
+        "since the English one strips diacritics and rewrites English "
+        "spellings and numbers (default: english)",
     )
     parser.add_argument(
         "--audio",

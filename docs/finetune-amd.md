@@ -245,6 +245,11 @@ exactly what fine-tuning changed:
     fine-tuned    14.5%
 ```
 
+WER is scored after Whisper's English normalizer by default. For any other
+language, pass `--normalizer basic`: the English normalizer strips diacritics
+and rewrites English spellings and numbers, which hides real errors in, say,
+Welsh, where `tŷ` and `ty` are different words.
+
 With `--keyword`, you also get a per-model recall summary across all matching clips:
 ```
   Keyword recall: fine-tuned

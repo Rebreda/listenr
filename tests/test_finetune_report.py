@@ -89,6 +89,14 @@ class TestEvalReport:
             "expected": 5,
         }
 
+    def test_records_basic_normalization(self):
+        rep = eval_report(
+            mode="split", model="m", base_model=None, dataset="d", split="test",
+            n_requested=1, keywords=[], wer_pct={}, keyword_recall={}, clips=[],
+            wer_normalization="basic",
+        )
+        assert rep["wer_normalization"] == "whisper_basic"
+
     def test_none_base_model(self):
         rep = eval_report(
             mode="split", model="/m", base_model=None, dataset=None, split="test",
