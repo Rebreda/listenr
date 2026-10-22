@@ -9,6 +9,7 @@ from listenr.finetune.evaluate import (
     compute_wer,
     keyword_hit_map,
     keyword_hits,
+    _pipeline_kwargs,
     resolve_base_model,
     select_examples,
     tally_keywords,
@@ -171,3 +172,21 @@ class TestComputeWer:
     def test_unknown_normalizer_raises(self):
         with pytest.raises(ValueError):
             compute_wer(["a"], ["a"], "welsh")
+
+
+# ---------------------------------------------------------------------------
+# pipeline options per family
+# ---------------------------------------------------------------------------
+
+class TestPipelineKwargs:
+    def _model_dir(self, tmp_path, model_type):
+        (tmp_path / "config.json").write_text(json.dumps({"model_type": model_type}))
+        return tmp_path
+
+    def test_whisper_gets_timestamps_for_long_form(self, tmp_path):
+        assert _pipeline_kwargs(self._model_dir(tmp_path, "whisper")) == {"return_timestamps": True}
+
+    def test_moonshine_gets_none(self, tmp_path):
+        # The ASR pipeline raises on return_timestamps for any non-Whisper seq2seq model.
+        assert _pipeline_kwargs(self._model_dir(tmp_path, "moonshine")) == {}
+        assert _pipeline_kwargs("moonshine-ai/moonshine-streaming-small") == {}

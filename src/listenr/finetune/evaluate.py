@@ -221,10 +221,24 @@ def make_asr(model_id_or_path: str | Path, device: int | str | None = None):
         "automatic-speech-recognition",
         model=str(model_id_or_path),
         device=device,
-        # Required for clips longer than 30s (long-form generation); harmless
-        # for short clips.
-        return_timestamps=True,
+        **_pipeline_kwargs(model_id_or_path),
     )
+
+
+def _pipeline_kwargs(model_id_or_path: str | Path) -> dict:
+    """Pipeline options that depend on the model family.
+
+    Whisper needs timestamps for clips longer than its 30 s window (long-form
+    generation). The pipeline refuses them for every other seq2seq family, so
+    Moonshine, which takes the waveform at its natural length, gets none.
+    """
+    from listenr.finetune.architectures import detect
+
+    try:
+        arch = detect(str(model_id_or_path))
+    except Exception:
+        return {}
+    return {"return_timestamps": True} if arch.model_type == "whisper" else {}
 
 
 def _generate_kwargs(model_id_or_path: str | Path) -> dict:
