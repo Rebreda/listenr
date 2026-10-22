@@ -24,6 +24,7 @@ Examples:
 
 import argparse
 import csv
+import hashlib
 import json
 import logging
 import random
@@ -174,6 +175,7 @@ def validate_entry(
         # Must be carried through: assign_splits runs on validated entries, so
         # dropping this here makes every split-preservation path unreachable.
         "source_split": data.get("source_split"),
+        "speaker_id": data.get("speaker_id"),
         "audio_path": str(audio_path.resolve()),
         "raw_transcription": raw,
         "corrected_transcription": corrected,
@@ -232,6 +234,70 @@ def unknown_source_splits(entries: list[dict]) -> Counter:
         str(e["source_split"]) for e in entries
         if e.get("source_split") and normalise_source_split(e["source_split"]) is None
     )
+
+
+def promote_to_train(entries: list[dict], splits: list[str]) -> tuple[list[dict], int]:
+    """Send entries from the named source *splits* to train, when they cannot
+    leak into the evaluation. Returns ``(entries, promoted)``.
+
+    Common Voice's train.tsv is a small slice of its validated clips (Welsh
+    27.0: 11.6 h of 121 h), so training on validated is the usual recipe. But
+    validated also holds every dev and test clip, and test speakers and
+    sentences recur in it. An entry is promoted only if its audio is not
+    already in train/dev/test, its speaker is not a test speaker, and its
+    sentence is not a dev or test sentence. The rest keep their split name and
+    are dropped with the other unknown splits.
+    """
+    wanted = {s.lower() for s in splits}
+    assigned = [e for e in entries if normalise_source_split(e.get("source_split"))]
+    held = [e for e in assigned if normalise_source_split(e["source_split"]) in ("dev", "test")]
+    seen_audio = {e["audio_path"] for e in assigned}
+    test_speakers = {
+        e["speaker_id"] for e in held
+        if e.get("speaker_id") and normalise_source_split(e["source_split"]) == "test"
+    }
+    held_sentences = {_sentence_key(e) for e in held}
+
+    promoted = 0
+    for entry in entries:
+        if str(entry.get("source_split") or "").lower() not in wanted:
+            continue
+        if (
+            entry["audio_path"] in seen_audio
+            or (entry.get("speaker_id") and entry["speaker_id"] in test_speakers)
+            or _sentence_key(entry) in held_sentences
+        ):
+            continue
+        seen_audio.add(entry["audio_path"])
+        entry["source_split"] = "train"
+        promoted += 1
+    return entries, promoted
+
+
+def _sentence_key(entry: dict) -> str:
+    return " ".join(entry.get("raw_transcription", "").lower().split())
+
+
+def carve_dev(entries: list[dict], dev_frac: float, seed: int = 42) -> int:
+    """Move *dev_frac* of train sentences to dev, in place, when there is no
+    dev split. Returns how many entries moved.
+
+    Training picks its best checkpoint on dev and falls back to test when dev
+    is empty, which tunes the model on the test set. Common Voice Cornish 27.0
+    ships no dev at all. Whole sentences move together, so no sentence is in
+    both train and dev.
+    """
+    if any(e["split"] == "dev" for e in entries):
+        return 0
+    moved = 0
+    for entry in entries:
+        if entry["split"] != "train":
+            continue
+        digest = hashlib.sha1(f"{seed}:{_sentence_key(entry)}".encode()).hexdigest()
+        if int(digest[:8], 16) / 2**32 < dev_frac:
+            entry["split"] = "dev"
+            moved += 1
+    return moved
 
 
 def preserve_source_splits(entries: list[dict]) -> list[dict]:
@@ -452,6 +518,18 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--train-from",
+        action="append",
+        default=[],
+        metavar="SPLIT",
+        help=(
+            "Also train on records from this source split, e.g. Common Voice's "
+            "validated, except those whose audio is already in train/dev/test, "
+            "whose speaker is in test, or whose sentence is in dev or test. "
+            "Repeatable. Only applies when source splits are preserved."
+        ),
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=settings.dataset.seed,
@@ -546,6 +624,9 @@ def main() -> None:
         logger.error("No valid entries found. Check your recordings directory.")
         sys.exit(1)
 
+    promoted = 0
+    if args.train_from and args.preserve_splits is not False:
+        entries, promoted = promote_to_train(entries, args.train_from)
     unknown = unknown_source_splits(entries)
     try:
         entries, how = assign_splits(
@@ -568,6 +649,21 @@ def main() -> None:
                 "cannot affect the evaluation. Pass --no-preserve-splits to "
                 "reshuffle everything instead.",
                 unlabelled,
+            )
+        if promoted:
+            logger.info(
+                "  %d record(s) from %s went to train: their audio, speaker "
+                "and sentence are not in dev or test.",
+                promoted,
+                "/".join(args.train_from),
+            )
+        carved = carve_dev(entries, dev_frac, seed=args.seed)
+        if carved:
+            logger.info(
+                "  The source has no dev split, so %d train record(s) (%.0f%% of "
+                "sentences) became dev, for picking checkpoints without touching test.",
+                carved,
+                100 * dev_frac,
             )
         if unknown:
             logger.warning(

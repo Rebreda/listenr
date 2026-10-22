@@ -18,6 +18,8 @@ from listenr.build_dataset import (
     validate_entry,
     parse_split,
     assign_splits,
+    carve_dev,
+    promote_to_train,
     count_source_splits,
     normalise_source_split,
     unknown_source_splits,
@@ -656,3 +658,72 @@ class TestSplitsEndToEnd:
         self._run(monkeypatch, manifest, output)
         rows = list(csv.DictReader(open(output / "test.csv")))
         assert all(r["source_split"] == "test" for r in rows)
+
+
+# ---------------------------------------------------------------------------
+# promote_to_train / carve_dev
+# ---------------------------------------------------------------------------
+
+def _cv(uuid, split, audio, speaker, text):
+    return {"uuid": uuid, "source_split": split, "audio_path": audio,
+            "speaker_id": speaker, "raw_transcription": text}
+
+
+class TestPromoteToTrain:
+    def _corpus(self):
+        return [
+            _cv("tr", "train", "/a/tr.mp3", "s1", "one"),
+            _cv("de", "dev", "/a/de.mp3", "s2", "two"),
+            _cv("te", "test", "/a/te.mp3", "s3", "three"),
+            # validated repeats every train/dev/test clip
+            _cv("v-tr", "validated", "/a/tr.mp3", "s1", "one"),
+            _cv("v-te", "validated", "/a/te.mp3", "s3", "three"),
+            _cv("ok", "validated", "/a/ok.mp3", "s1", "four"),
+            _cv("dev-spk", "validated", "/a/ds.mp3", "s2", "five"),
+            _cv("test-spk", "validated", "/a/ts.mp3", "s3", "six"),
+            _cv("test-sent", "validated", "/a/tx.mp3", "s4", "Three"),
+            _cv("dev-sent", "validated", "/a/dx.mp3", "s4", "two "),
+            _cv("bad", "invalidated", "/a/bad.mp3", "s5", "seven"),
+        ]
+
+    def test_only_clips_that_cannot_leak_are_promoted(self):
+        entries, promoted = promote_to_train(self._corpus(), ["validated"])
+        assert promoted == 2
+        trained = {e["uuid"] for e in entries if e["source_split"] == "train"}
+        # dev speakers may train: dev only picks checkpoints
+        assert trained == {"tr", "ok", "dev-spk"}
+
+    def test_the_rest_are_dropped_with_the_unknown_splits(self):
+        entries, _ = promote_to_train(self._corpus(), ["validated"])
+        result, _ = assign_splits(entries, 0.8, 0.1, preserve=True)
+        assert {e["uuid"] for e in result} == {"tr", "de", "te", "ok", "dev-spk"}
+
+    def test_names_match_case_insensitively(self):
+        corpus = [_cv("te", "test", "/a/te.mp3", "s3", "x"), _cv("v", "Validated", "/a/v.mp3", "s1", "y")]
+        _, promoted = promote_to_train(corpus, ["VALIDATED"])
+        assert promoted == 1
+
+    def test_unknown_speakers_only_filter_on_audio_and_sentence(self):
+        corpus = [_cv("te", "test", "/a/te.mp3", None, "x"), _cv("v", "validated", "/a/v.mp3", None, "y")]
+        _, promoted = promote_to_train(corpus, ["validated"])
+        assert promoted == 1
+
+
+class TestCarveDev:
+    def _entries(self, n):
+        return [{"uuid": f"u{i}", "split": "train", "raw_transcription": f"sentence {i % (n // 2)}"}
+                for i in range(n)] + [{"uuid": "t", "split": "test", "raw_transcription": "t"}]
+
+    def test_carves_whole_sentences_when_there_is_no_dev(self):
+        entries = self._entries(400)
+        moved = carve_dev(entries, 0.1, seed=42)
+        dev = [e for e in entries if e["split"] == "dev"]
+        assert moved == len(dev) and 20 < moved < 60
+        dev_sentences = {e["raw_transcription"] for e in dev}
+        train_sentences = {e["raw_transcription"] for e in entries if e["split"] == "train"}
+        assert not dev_sentences & train_sentences
+        assert entries[-1]["split"] == "test"
+
+    def test_leaves_an_existing_dev_alone(self):
+        entries = self._entries(40) + [{"uuid": "d", "split": "dev", "raw_transcription": "d"}]
+        assert carve_dev(entries, 0.1) == 0
