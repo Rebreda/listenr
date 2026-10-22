@@ -20,6 +20,7 @@ from listenr.build_dataset import (
     assign_splits,
     count_source_splits,
     normalise_source_split,
+    unknown_source_splits,
     write_csv,
     CSV_COLUMNS,
 )
@@ -458,6 +459,29 @@ class TestPreserveSourceSplits:
         result, _ = assign_splits(entries, 0.8, 0.1)
         unlabelled = [e for e in result if e["uuid"] != "a"]
         assert {e["split"] for e in unlabelled} == {"train"}
+
+    def test_common_voice_extra_splits_are_dropped_not_trained_on(self):
+        """validated contains every test clip; sending it to train leaks the test set."""
+        entries = [
+            {"uuid": "tr", "source_split": "train"},
+            {"uuid": "te", "source_split": "test"},
+            {"uuid": "va", "source_split": "validated"},
+            {"uuid": "in", "source_split": "invalidated"},
+            {"uuid": "ot", "source_split": "other"},
+            {"uuid": "none"},
+        ]
+        result, how = assign_splits(entries, 0.8, 0.1)
+        assert how == "preserved"
+        assert {e["uuid"]: e["split"] for e in result} == {
+            "tr": "train", "te": "test", "none": "train",
+        }
+
+    def test_unknown_source_splits_counts_names(self):
+        entries = [
+            {"source_split": "validated"}, {"source_split": "validated"},
+            {"source_split": "other"}, {"source_split": "dev"}, {},
+        ]
+        assert unknown_source_splits(entries) == {"validated": 2, "other": 1}
 
     def test_no_preserve_splits_forces_a_reshuffle(self):
         entries = self._imported(10)

@@ -226,18 +226,38 @@ def count_source_splits(entries: list[dict]) -> tuple[int, int]:
     return labelled, len(entries) - labelled
 
 
+def unknown_source_splits(entries: list[dict]) -> Counter:
+    """Count entries per source split name that is not train, dev or test."""
+    return Counter(
+        str(e["source_split"]) for e in entries
+        if e.get("source_split") and normalise_source_split(e["source_split"]) is None
+    )
+
+
 def preserve_source_splits(entries: list[dict]) -> list[dict]:
-    """Adopt each entry's source split; put unlabelled entries in train.
+    """Adopt each entry's source split; put unlabelled entries in train, and
+    drop entries from any other named split.
 
     Real corpora are not uniformly labelled. MDC Spontaneous Speech 4.0 ships
     2,425 records of which 120 carry no split at all. Sending those to train is
     the conservative choice: test stays exactly the corpus's own test set, so
     an unlabelled clip can never contaminate the evaluation or inflate a WER
     improvement. The caller reports how many were placed this way.
+
+    A split with some other name is a different matter. Common Voice ships
+    validated, invalidated and other alongside train/dev/test, and validated
+    is a superset of all three, so sending it to train would train on the test
+    set. invalidated holds clips the community voted wrong. Those entries are
+    dropped; the caller reports which names and how many.
     """
+    kept = []
     for entry in entries:
-        entry["split"] = normalise_source_split(entry.get("source_split")) or "train"
-    return entries
+        split = normalise_source_split(entry.get("source_split"))
+        if split is None and entry.get("source_split"):
+            continue
+        entry["split"] = split or "train"
+        kept.append(entry)
+    return kept
 
 
 def shuffle_splits(
@@ -289,7 +309,9 @@ def assign_splits(
         None  keep them when anything carries one, otherwise reshuffle.
 
     Entries with no source split go to train, never to dev or test, so an
-    unlabelled clip cannot contaminate the evaluation.
+    unlabelled clip cannot contaminate the evaluation. When preserving,
+    entries from any other named split (Common Voice's validated, invalidated,
+    other) are dropped, so the returned list can be shorter than the input.
 
     Returns ``(entries, how)`` where *how* is "preserved" or "shuffled", so the
     caller can say which happened. Silently reshuffling is how this goes
@@ -524,6 +546,7 @@ def main() -> None:
         logger.error("No valid entries found. Check your recordings directory.")
         sys.exit(1)
 
+    unknown = unknown_source_splits(entries)
     try:
         entries, how = assign_splits(
             entries, train_frac, dev_frac, seed=args.seed, preserve=args.preserve_splits
@@ -545,6 +568,14 @@ def main() -> None:
                 "cannot affect the evaluation. Pass --no-preserve-splits to "
                 "reshuffle everything instead.",
                 unlabelled,
+            )
+        if unknown:
+            logger.warning(
+                "  Dropped %d record(s) from source splits that are not "
+                "train/dev/test: %s. Common Voice's validated overlaps its "
+                "test set and invalidated holds rejected clips.",
+                sum(unknown.values()),
+                ", ".join(f"{name} ({n})" for name, n in sorted(unknown.items())),
             )
     else:
         logger.info(f"Splits: shuffled at {args.split} with seed {args.seed}.")
