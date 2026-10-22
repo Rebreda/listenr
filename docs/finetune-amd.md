@@ -136,6 +136,8 @@ Adapter checkpoints land in `~/listenr_finetune/`, owned by your host UID
 | `--language LANG` | `english` | Target language (Whisper only) |
 | `--bf16` | on (in compose) | bf16 mixed precision  - **use this on AMD** |
 | `--fp16` | off | fp16  - CUDA only, not recommended for AMD |
+| `--method lora\|full` | `lora` | `full` updates every weight and saves a standalone model: skip `merge` and evaluate the output directory directly |
+| `--from-scratch` | off | Random weights in `--base-model`'s architecture, for training a model on a new language from nothing. Needs `--method full` |
 | `--dry-run` | off | Load data + model, print stats, exit |
 
 Full list: `podman compose run --rm finetune --help`.

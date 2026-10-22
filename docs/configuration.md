@@ -68,6 +68,8 @@ strip_tags = true       # strip noise tags like (music)
 base_model = "openai/whisper-small"
 language = "english"
 task = "transcribe"     # transcribe | translate
+method = "lora"         # lora | full
+from_scratch = false    # random weights; needs method = "full"
 lora_r = 8
 lora_alpha = 32
 lora_dropout = 0.1

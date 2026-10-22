@@ -52,7 +52,7 @@ def _resolve_dataset_path(dataset_arg: Path | None, dataset_output: Path) -> Pat
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Fine-tune Whisper with LoRA adapters on your listenr dataset."
+        description="Fine-tune Whisper or Moonshine on your listenr dataset, with LoRA or in full."
     )
 
     # --- data ---
@@ -71,7 +71,10 @@ def main() -> None:
         type=Path,
         default=settings.finetune.output_dir,
         metavar="DIR",
-        help=f"Where to save the LoRA adapter checkpoint (default: {settings.finetune.output_dir})",
+        help=(
+            "Where to save the LoRA adapter, or the whole model with --method full "
+            f"(default: {settings.finetune.output_dir})"
+        ),
     )
 
     # --- model ---
@@ -108,6 +111,26 @@ def main() -> None:
         action="store_false",
         default=settings.finetune.freeze_encoder,
         help="Train the encoder too (default: freeze it)",
+    )
+
+    parser.add_argument(
+        "--method",
+        choices=["lora", "full"],
+        default=settings.finetune.method,
+        help=(
+            "'lora' trains a small adapter to merge afterwards; 'full' updates "
+            "every weight and saves a standalone model, with nothing to merge "
+            f"(default: {settings.finetune.method})"
+        ),
+    )
+    parser.add_argument(
+        "--from-scratch",
+        action=argparse.BooleanOptionalAction,
+        default=settings.finetune.from_scratch,
+        help=(
+            "Use --base-model's architecture with randomly initialised weights. "
+            "Requires --method full"
+        ),
     )
 
     # --- LoRA ---
@@ -162,6 +185,9 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if args.from_scratch and args.method != "full":
+        parser.error("--from-scratch requires --method full: an adapter on random weights learns nothing useful")
 
     # Deferred imports — only required when actually running, so the package is
     # importable without the finetune extras installed.
@@ -237,10 +263,13 @@ def main() -> None:
     logger.info(f"Dataset splits: { {k: len(v) for k, v in dataset.items()} }")
 
     # -----------------------------------------------------------------------
-    # 2. Model + LoRA
+    # 2. Model (+ LoRA)
     # -----------------------------------------------------------------------
-    logger.info(f"Loading base model: {args.base_model}")
-    model = load_base_model(args.base_model)
+    if args.from_scratch:
+        logger.info(f"Initialising {args.base_model}'s architecture with random weights")
+    else:
+        logger.info(f"Loading base model: {args.base_model}")
+    model = load_base_model(args.base_model, from_scratch=args.from_scratch)
 
     # Set generation config to avoid deprecation warnings and force correct
     # tokens. English-only families (Moonshine) have no language/task tokens.
@@ -249,15 +278,19 @@ def main() -> None:
         model.generation_config.task = args.task
         model.generation_config.forced_decoder_ids = None
 
-    lora_cfg = make_lora_config(
-        r=args.lora_r,
-        alpha=args.lora_alpha,
-        dropout=args.lora_dropout,
-        target_modules=settings.finetune.lora_target_modules,
-    )
-    model = apply_lora(model, lora_cfg)
+    if args.method == "lora":
+        lora_cfg = make_lora_config(
+            r=args.lora_r,
+            alpha=args.lora_alpha,
+            dropout=args.lora_dropout,
+            target_modules=settings.finetune.lora_target_modules,
+        )
+        model = apply_lora(model, lora_cfg)
 
-    if args.freeze_encoder:
+    if args.freeze_encoder and args.from_scratch:
+        # A frozen random encoder would hand the decoder noise for the whole run.
+        logger.info("Training from scratch: the encoder is trained too.")
+    elif args.freeze_encoder:
         freeze_encoder(model)
         logger.info("Encoder frozen.")
 
@@ -353,8 +386,11 @@ def main() -> None:
     logger.info("Starting training…")
     trainer.train()
 
-    # Save only the adapter weights.
-    logger.info(f"Saving LoRA adapter to {output_dir}")
+    # LoRA saves only the adapter weights; full saves a standalone model.
+    if args.method == "lora":
+        logger.info(f"Saving LoRA adapter to {output_dir}")
+    else:
+        logger.info(f"Saving model to {output_dir} (standalone: no merge needed)")
     model.save_pretrained(str(output_dir))
     processor.save_pretrained(str(output_dir))
 

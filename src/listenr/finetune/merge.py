@@ -53,6 +53,11 @@ def read_base_model_id(adapter_dir: Path) -> str:
         If the JSON does not contain a ``base_model_name_or_path`` key.
     """
     config_path = adapter_dir / "adapter_config.json"
+    if not config_path.exists() and (adapter_dir / "config.json").exists():
+        raise FileNotFoundError(
+            f"{adapter_dir} holds a whole model, not a LoRA adapter: it was trained "
+            "with --method full and needs no merge. Load or evaluate it directly."
+        )
     if not config_path.exists():
         raise FileNotFoundError(
             f"adapter_config.json not found in {adapter_dir}. "

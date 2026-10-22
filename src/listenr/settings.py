@@ -114,6 +114,12 @@ class FinetuneSettings(BaseModel):
     # ignores both.
     language: str = "english"
     task: Literal["transcribe", "translate"] = "transcribe"
+    # "lora" trains a small adapter on top of the base weights; "full" updates
+    # every weight and writes a standalone model, with nothing to merge.
+    method: Literal["lora", "full"] = "lora"
+    # Start from base_model's architecture with random weights instead of its
+    # trained ones. Requires method = "full".
+    from_scratch: bool = False
     lora_r: int = 8
     lora_alpha: int = 32
     lora_dropout: float = 0.1

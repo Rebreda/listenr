@@ -10,7 +10,7 @@ Requires the ``finetune`` optional dependencies::
 
 Public API
 ----------
-load_base_model(model_id)                      -> encoder-decoder ASR model
+load_base_model(model_id, from_scratch=False)  -> encoder-decoder ASR model
 make_lora_config(r, alpha, dropout, modules)   -> LoraConfig
 apply_lora(model, lora_config)                 -> PeftModel
 freeze_encoder(model)                          -> None  (in-place)
@@ -27,17 +27,21 @@ from typing import Any
 # Model loading
 # ---------------------------------------------------------------------------
 
-def load_base_model(model_id: str) -> Any:
-    """Load the pre-trained encoder-decoder ASR model from *model_id*.
+def load_base_model(model_id: str, from_scratch: bool = False) -> Any:
+    """Load the encoder-decoder ASR model from *model_id*.
 
     Resolves the concrete class from the checkpoint config, so any family in
     :mod:`listenr.finetune.architectures` loads through the same call.
+
+    With *from_scratch*, only the architecture is taken from *model_id*: the
+    weights are freshly initialised. The checkpoint's generation config is
+    still applied, so decoding limits and special tokens match the original.
 
     The model is returned in full precision (fp32).  The caller is responsible
     for casting to fp16/bf16 via ``Seq2SeqTrainingArguments`` at training time.
     """
     try:
-        from transformers import AutoModelForSpeechSeq2Seq
+        from transformers import AutoConfig, AutoModelForSpeechSeq2Seq, GenerationConfig
     except ImportError:
         print(
             "ERROR: transformers is required. Install with:\n"
@@ -46,7 +50,15 @@ def load_base_model(model_id: str) -> Any:
         )
         sys.exit(1)
 
-    return AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
+    if not from_scratch:
+        return AutoModelForSpeechSeq2Seq.from_pretrained(model_id)
+
+    model = AutoModelForSpeechSeq2Seq.from_config(AutoConfig.from_pretrained(model_id))
+    try:
+        model.generation_config = GenerationConfig.from_pretrained(model_id)
+    except OSError:
+        pass  # no generation_config.json; keep the one derived from the config
+    return model
 
 
 # ---------------------------------------------------------------------------
