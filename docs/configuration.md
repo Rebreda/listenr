@@ -86,6 +86,13 @@ output_dir = "~/listenr_finetune"
 eval_steps = 200
 save_steps = 400
 generation_max_length = 128
+gradient_checkpointing = true
+group_by_length = true
+eval_max_samples = 0    # 0 = all dev clips
+eval_batch_size = 0     # 0 = batch_size
+pin_memory = true
+preprocess_workers = 0  # 0 = half the CPU cores
+dataloader_workers = 0
 
 # Keyword corrections passed to the LLM: misheard -> correct (case-insensitive).
 # Defining this table replaces the built-in examples.
