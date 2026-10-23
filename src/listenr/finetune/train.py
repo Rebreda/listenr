@@ -180,6 +180,14 @@ def main() -> None:
         default=settings.finetune.pin_memory,
         help=f"Pin host memory for batches (default: {settings.finetune.pin_memory})",
     )
+    parser.add_argument("--early-stopping-patience", type=int,
+                        default=settings.finetune.early_stopping_patience,
+                        help="Stop after this many evaluations without dev WER improving by more "
+                        "than --early-stopping-threshold; 0 = never (default: %(default)s)")
+    parser.add_argument("--early-stopping-threshold", type=float,
+                        default=settings.finetune.early_stopping_threshold,
+                        help="Smallest WER drop, in points, that counts as improving "
+                        "(default: %(default)s)")
     parser.add_argument("--preprocess-workers", type=int, default=settings.finetune.preprocess_workers,
                         help="Processes for decoding audio before training; 0 = half the "
                         "CPU cores (default: %(default)s)")
@@ -414,8 +422,22 @@ def main() -> None:
     if eval_split is None:
         logger.warning("No 'dev' or 'test' split found — evaluation will be skipped.")
 
+    callbacks = []
+    if args.early_stopping_patience > 0:
+        from transformers import EarlyStoppingCallback
+        # The best checkpoint is still the one kept: load_best_model_at_end.
+        callbacks.append(EarlyStoppingCallback(
+            early_stopping_patience=args.early_stopping_patience,
+            early_stopping_threshold=args.early_stopping_threshold,
+        ))
+        logger.info(
+            f"Early stopping after {args.early_stopping_patience} evaluations without "
+            f"dev WER improving by more than {args.early_stopping_threshold} points"
+        )
+
     trainer = Seq2SeqTrainer(
         args=training_args,
+        callbacks=callbacks,
         model=model,
         train_dataset=train_split,
         eval_dataset=eval_split,

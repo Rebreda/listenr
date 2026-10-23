@@ -153,6 +153,10 @@ class FinetuneSettings(BaseModel):
     # CPU processes for decoding audio and extracting features before
     # training (0 = half the cores), and for collating batches while the GPU
     # trains (0 = in the training process).
+    # Stop once dev WER has not improved by more than early_stopping_threshold
+    # (absolute WER points) for this many evaluations in a row. 0 = never.
+    early_stopping_patience: int = 0
+    early_stopping_threshold: float = 0.0
     preprocess_workers: int = 0
     dataloader_workers: int = 0
     save_steps: int = 400

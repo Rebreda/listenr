@@ -91,6 +91,8 @@ group_by_length = true
 eval_max_samples = 0    # 0 = all dev clips
 eval_batch_size = 0     # 0 = batch_size
 pin_memory = true
+early_stopping_patience = 0     # 0 = never stop early
+early_stopping_threshold = 0.0  # WER points
 preprocess_workers = 0  # 0 = half the CPU cores
 dataloader_workers = 0
 
