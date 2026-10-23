@@ -176,3 +176,50 @@ class TestCountTrainableParams:
         assert isinstance(result, tuple)
         assert len(result) == 2
         assert all(isinstance(v, int) for v in result)
+
+
+# ---------------------------------------------------------------------------
+# load_base_model(from_scratch=True)
+# ---------------------------------------------------------------------------
+
+class TestLoadFromScratch:
+    def _tiny_moonshine(self, tmp_path):
+        transformers = pytest.importorskip("transformers")
+        config = transformers.MoonshineConfig(
+            hidden_size=32, intermediate_size=64,
+            encoder_num_hidden_layers=1, decoder_num_hidden_layers=1,
+            encoder_num_attention_heads=2, decoder_num_attention_heads=2,
+            vocab_size=100,
+        )
+        torch.manual_seed(0)
+        transformers.MoonshineForConditionalGeneration(config).save_pretrained(tmp_path)
+        transformers.GenerationConfig(
+            max_length=77, decoder_start_token_id=1, eos_token_id=2,
+        ).save_pretrained(tmp_path)
+        return transformers.MoonshineForConditionalGeneration.from_pretrained(tmp_path)
+
+    def test_keeps_architecture_but_not_weights(self, tmp_path):
+        from listenr.finetune.model import load_base_model
+        trained = self._tiny_moonshine(tmp_path)
+        torch.manual_seed(1)
+        fresh = load_base_model(str(tmp_path), from_scratch=True)
+
+        assert type(fresh) is type(trained)
+        assert fresh.config.hidden_size == trained.config.hidden_size
+        trained_w = dict(trained.named_parameters())
+        assert any(
+            not torch.equal(p, trained_w[name]) for name, p in fresh.named_parameters()
+        )
+
+    def test_keeps_generation_config(self, tmp_path):
+        from listenr.finetune.model import load_base_model
+        self._tiny_moonshine(tmp_path)
+        fresh = load_base_model(str(tmp_path), from_scratch=True)
+        assert fresh.generation_config.max_length == 77
+
+    def test_pretrained_by_default(self, tmp_path):
+        from listenr.finetune.model import load_base_model
+        trained = self._tiny_moonshine(tmp_path)
+        loaded = load_base_model(str(tmp_path))
+        trained_w = dict(trained.named_parameters())
+        assert all(torch.equal(p, trained_w[n]) for n, p in loaded.named_parameters())

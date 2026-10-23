@@ -209,6 +209,17 @@ class TestWhisperDataCollator:
         assert batch["labels"][0, 0].item() != bos
         assert batch["labels"][1, 0].item() != bos
 
+    def test_trimmed_labels_flatten_with_view(self, collator):
+        """The loss flattens labels with .view(-1), which needs contiguous memory."""
+        bos = 50258
+        features = [
+            {"input_features": np.zeros((80, 3000)), "labels": [bos, 1, 2]},
+            {"input_features": np.zeros((80, 3000)), "labels": [bos, 3, 4, 5]},
+        ]
+        labels = collator(features)["labels"]
+        assert labels.is_contiguous()
+        assert labels.view(-1).shape[0] == labels.numel()
+
     def test_bos_not_trimmed_when_mixed_start_tokens(self, collator):
         """BOS trim only happens when ALL rows start with the BOS token."""
         bos = 50258

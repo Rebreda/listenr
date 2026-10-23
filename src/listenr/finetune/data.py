@@ -53,7 +53,7 @@ def make_processor(
     language:
         Target language, e.g. ``"english"``.  Passed to the tokenizer so the
         correct language token is prepended during encoding.  Ignored by
-        English-only families such as Moonshine.
+        families without language tokens, such as Moonshine.
     task:
         ``"transcribe"`` (default) or ``"translate"``.  Ignored as above.
     architecture:
@@ -306,8 +306,10 @@ class SpeechDataCollator:
         )
 
         # Trim leading BOS token if the tokenizer prepended it; Trainer adds it back.
+        # The slice is a strided view; recent transformers flattens labels with
+        # .view() inside the loss (Moonshine does), which rejects it.
         if (labels[:, 0] == self.decoder_start_token_id).all().cpu().item():
-            labels = labels[:, 1:]
+            labels = labels[:, 1:].contiguous()
 
         batch["labels"] = labels
         return batch

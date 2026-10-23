@@ -35,6 +35,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--audio-column", default=None, help="Override the audio source column.")
     parser.add_argument("--text-column", default=None, help="Override the transcription source column.")
     parser.add_argument("--split-column", default=None, help="Override the split source column.")
+    parser.add_argument("--speaker-column", default=None, help="Override the speaker id source column.")
 
 
 def log_summary(logger: logging.Logger, summary: dict[str, Any]) -> None:

@@ -47,6 +47,7 @@ listenr build-dataset \
 | `--format csv\|hf\|both` | `csv` | Output format |
 | `--seed N` | `42` | Random seed for reproducible splits |
 | `--no-strip-tags` | off | Keep noise tags like `(music)` in transcriptions |
+| `--train-from SPLIT` | — | Also train on records from this source split (e.g. `validated`) that cannot leak into dev or test. Repeatable |
 | `--remap-audio-prefix OLD:NEW` |: | Rewrite audio path prefix (useful in containers) |
 | `--dry-run` | off | Print stats and exit without writing files |
 
@@ -119,6 +120,7 @@ overrides for unusual layouts:
 | `--audio-column NAME` | Source column holding the audio path/clip |
 | `--text-column NAME` | Source column holding the transcription |
 | `--split-column NAME` | Source column holding the split name |
+| `--speaker-column NAME` | Source column holding the speaker id (defaults: `speaker_id`, `client_id`) |
 
 ### Mozilla Data Collective
 
@@ -221,8 +223,44 @@ To reshuffle everything anyway:
 listenr build-dataset --no-preserve-splits --split 80/10/10
 ```
 
-`--split` only sets the ratios for a reshuffle. It has no effect when splits
-are preserved.
+`--split` mostly sets the ratios for a reshuffle. When splits are preserved,
+its dev fraction is only used if the corpus has no dev split (see below).
+
+### Splits other than train/dev/test
+
+Records from any other named split are dropped, with a warning naming each one.
+Common Voice ships `validated`, `invalidated` and `other` beside
+train/dev/test. `validated` contains every train, dev and test clip, so
+treating it as train would train on the test set.
+
+But Common Voice's `train` is only a small slice of `validated`. Welsh 27.0 has
+121 hours of validated speech and 11.6 in train. To train on the rest without
+leaking into the evaluation, pass `--train-from`:
+
+```bash
+listenr build-dataset \
+    --manifest ~/.listenr/audio_clips/imports/mdc/<dataset-id>/manifest.jsonl \
+    --train-from validated --format hf
+```
+
+A `validated` record goes to train only if all of these hold:
+- its audio is not already in train, dev or test;
+- its speaker is not a test speaker;
+- its sentence is not a dev or test sentence.
+
+Dev speakers may train, because dev only chooses checkpoints. Speakers come
+from the importer's `speaker_id`, which it reads from a `speaker_id` or
+`client_id` column (or `--speaker-column`). If a corpus has no speaker ids,
+only the audio and sentence checks apply. Welsh 27.0 gains 9,171 training clips
+this way, more than doubling train.
+
+### Corpora without a dev split
+
+Training picks its best checkpoint on dev, and falls back to test when dev is
+empty, which tunes the model on the test set. So when splits are preserved and
+there is no dev, the dev fraction of `--split` (10% by default) is taken from
+train, by whole sentences, and becomes dev. Common Voice Cornish 27.0 has no
+dev split.
 
 ## Noise tag stripping changes the labels
 

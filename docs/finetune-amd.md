@@ -136,6 +136,8 @@ Adapter checkpoints land in `~/listenr_finetune/`, owned by your host UID
 | `--language LANG` | `english` | Target language (Whisper only) |
 | `--bf16` | on (in compose) | bf16 mixed precision  - **use this on AMD** |
 | `--fp16` | off | fp16  - CUDA only, not recommended for AMD |
+| `--method lora\|full` | `lora` | `full` updates every weight and saves a standalone model: skip `merge` and evaluate the output directory directly |
+| `--from-scratch` | off | Random weights in `--base-model`'s architecture, for training a model on a new language from nothing. Needs `--method full` |
 | `--dry-run` | off | Load data + model, print stats, exit |
 
 Full list: `podman compose run --rm finetune --help`.
@@ -148,7 +150,7 @@ pipeline for whichever one `--base-model` names:
 | Family | Example ids | Notes |
 |---|---|---|
 | Whisper | `openai/whisper-tiny` … `openai/whisper-large-v3-turbo` | Multilingual; `--language` and `--task` apply |
-| Moonshine | `UsefulSensors/moonshine-tiny`, `UsefulSensors/moonshine-base` | English-only, much smaller, built for edge and low-latency use; `--language`/`--task` are ignored |
+| Moonshine | `UsefulSensors/moonshine-tiny`, `UsefulSensors/moonshine-base`, per-language `moonshine-ai/moonshine-{tiny,base}-<lang>` | One language per checkpoint, much smaller, built for edge and low-latency use. No language tokens, so `--language`/`--task` are ignored; fine-tune a checkpoint on another language's data to teach it that language |
 
 ```bash
 podman compose run --rm finetune --base-model UsefulSensors/moonshine-base

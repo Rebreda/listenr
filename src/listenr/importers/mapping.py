@@ -17,12 +17,15 @@ DEFAULT_TEXT_COLUMNS = (
 class FieldMapping:
     """Ordered candidate source columns per field; first non-empty match wins.
 
-    ``audio`` and ``text`` are required for a row to be imported.
+    ``audio`` and ``text`` are required for a row to be imported. ``split``
+    and ``speaker`` are optional; build-dataset uses the speaker to keep test
+    voices out of training.
     """
 
     audio: tuple[str, ...] = ("audio_path", "audio")
     text: tuple[str, ...] = DEFAULT_TEXT_COLUMNS
     split: tuple[str, ...] = ("split",)
+    speaker: tuple[str, ...] = ("speaker_id", "client_id")
 
     def with_overrides(
         self,
@@ -30,6 +33,7 @@ class FieldMapping:
         audio: str | None = None,
         text: str | None = None,
         split: str | None = None,
+        speaker: str | None = None,
     ) -> "FieldMapping":
         """Return a copy where each given column becomes the sole candidate."""
         changes: dict[str, tuple[str, ...]] = {}
@@ -39,4 +43,6 @@ class FieldMapping:
             changes["text"] = (text,)
         if split:
             changes["split"] = (split,)
+        if speaker:
+            changes["speaker"] = (speaker,)
         return replace(self, **changes)

@@ -91,7 +91,8 @@ def main() -> None:
 
     manifest_path = args.manifest or m.default_manifest_path(SOURCE, args.dataset_id)
     mapping = MDC_MAPPING.with_overrides(
-        audio=args.audio_column, text=args.text_column, split=args.split_column
+        audio=args.audio_column, text=args.text_column, split=args.split_column,
+        speaker=args.speaker_column,
     )
 
     try:

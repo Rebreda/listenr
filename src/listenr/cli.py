@@ -19,7 +19,6 @@ import argparse
 import json
 import requests
 import numpy as np
-import sounddevice as sd
 from collections import deque
 from math import gcd
 from scipy.signal import resample_poly
@@ -104,6 +103,11 @@ async def mic_stream(pcm_buffer: list, debug: bool = False):
     event loop — otherwise _recv_messages would never get a turn to process incoming
     WebSocket messages.
     """
+    # Imported here, not at module level: importing sounddevice initialises
+    # PortAudio, which raises on a machine with PulseAudio libraries but no
+    # running server (CI runners, containers). Only opening the mic needs it.
+    import sounddevice as sd
+
     loop = asyncio.get_event_loop()
     chunks_sent = 0
     # Some devices return audio with a constant offset. It is inaudible but it

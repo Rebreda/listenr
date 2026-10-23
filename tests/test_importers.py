@@ -94,6 +94,20 @@ class TestRecordsFromFileRows:
         assert records[0]["duration_s"] == 2.0
         assert records[0]["sample_rate"] == 8_000
 
+    def test_speaker_id_is_kept_when_the_source_has_one(self, tmp_path):
+        audio_path = _wav(tmp_path / "clip.wav")
+        rows = [
+            {"audio_path": str(audio_path), "transcription": "hi", "speaker_id": "spk-1"},
+            {"audio_path": str(audio_path), "transcription": "hi"},
+        ]
+
+        records, _ = m.records_from_rows(
+            rows, source="mdc", dataset_id="ds", mapping=FieldMapping(), audio_dir=tmp_path
+        )
+
+        assert records[0]["speaker_id"] == "spk-1"
+        assert "speaker_id" not in records[1]
+
 
 # ---------------------------------------------------------------------------
 # records_from_rows — in-memory audio bytes get materialised to WAV

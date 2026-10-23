@@ -161,7 +161,7 @@ services:
       - "listenr"
       - "eval"
       - "--model=/data/merged"
-      - "--dataset=/data/dataset"
+      - "--dataset=/data/dataset/hf_dataset"
     command: []
 
   # ── merge LoRA adapter into base model → standalone merged model ──────────

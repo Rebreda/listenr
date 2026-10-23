@@ -177,6 +177,9 @@ def records_from_rows(
         split = _as_text(_pick(row, mapping.split))
         if split:
             record["source_split"] = split
+        speaker = _as_text(_pick(row, mapping.speaker))
+        if speaker:
+            record["speaker_id"] = speaker
 
         records.append(record)
 

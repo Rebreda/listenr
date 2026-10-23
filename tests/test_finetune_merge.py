@@ -34,6 +34,11 @@ class TestReadBaseModelId:
         with pytest.raises(FileNotFoundError, match="adapter_config.json not found"):
             read_base_model_id(tmp_path)
 
+    def test_full_model_dir_explains_no_merge_needed(self, tmp_path):
+        (tmp_path / "config.json").write_text(json.dumps({"model_type": "moonshine"}))
+        with pytest.raises(FileNotFoundError, match="needs no merge"):
+            read_base_model_id(tmp_path)
+
     def test_raises_key_error_when_field_missing(self, tmp_path):
         (tmp_path / "adapter_config.json").write_text(json.dumps({"r": 8}))
         with pytest.raises(KeyError, match="base_model_name_or_path"):
