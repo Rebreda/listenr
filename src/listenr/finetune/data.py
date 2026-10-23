@@ -207,7 +207,9 @@ def prepare_example(
 
     labels = processor.tokenizer(batch["corrected_transcription"]).input_ids
 
-    return {feature_key: getattr(extracted, feature_key)[0], "labels": labels}
+    features = getattr(extracted, feature_key)[0]
+    # "length" lets the Trainer group clips of similar duration into a batch.
+    return {feature_key: features, "labels": labels, "length": len(features)}
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +220,7 @@ def make_dataset(
     hf_dataset_path: Path,
     processor: Any,
     feature_key: str = "input_features",
+    num_proc: int | None = None,
 ) -> Any:
     """Load the on-disk HuggingFace DatasetDict and apply feature preparation.
 
@@ -247,6 +250,7 @@ def make_dataset(
     dataset = dataset.map(
         lambda batch: prepare_example(batch, processor, feature_key),
         remove_columns=cols_to_remove,
+        num_proc=num_proc if num_proc and num_proc > 1 else None,
     )
     return dataset
 
