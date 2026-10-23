@@ -58,6 +58,11 @@ services:
       # container UID can write to them (matters with `userns_mode: keep-id`).
       MIOPEN_USER_DB_PATH: "/tmp/miopen"
       MIOPEN_CUSTOM_CACHE_DIR: "/tmp/miopen"
+      # Pick conv kernels from MIOpen's tuned database instead of timing them.
+      # On ROCm 10.1 / gfx1151 the timing step rejects every kernel for
+      # Moonshine's first conv ("No suitable algorithm"); on 7.2 it was
+      # simply slower (178 vs 166 ms per bf16 step).
+      MIOPEN_FIND_MODE: "${MIOPEN_FIND_MODE:-FAST}"
       # With userns_mode: keep-id, $HOME still points to /root inside the container,
       # but the process runs as the host UID which doesn't own /root. listenr resolves
       # config/cache paths via os.path.expanduser('~'), so it would fail to find the
@@ -143,6 +148,11 @@ services:
       TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: "${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-1}"
       MIOPEN_USER_DB_PATH: "/tmp/miopen"
       MIOPEN_CUSTOM_CACHE_DIR: "/tmp/miopen"
+      # Pick conv kernels from MIOpen's tuned database instead of timing them.
+      # On ROCm 10.1 / gfx1151 the timing step rejects every kernel for
+      # Moonshine's first conv ("No suitable algorithm"); on 7.2 it was
+      # simply slower (178 vs 166 ms per bf16 step).
+      MIOPEN_FIND_MODE: "${MIOPEN_FIND_MODE:-FAST}"
       HOME: "/home/ubuntu"
     volumes:
       # Merged model produced by the merge service
