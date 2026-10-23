@@ -3,7 +3,8 @@
 # Run once before `podman compose run --rm finetune`.
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# CDPATH= : with CDPATH set, cd prints the directory, which would end up in repo_root.
+repo_root="$(CDPATH= cd -- "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env_file="$repo_root/.env"
 
 if [[ -f "$env_file" ]]; then
