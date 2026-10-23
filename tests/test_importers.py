@@ -212,3 +212,19 @@ class TestHFLoader:
         assert record["raw_transcription"] == "hi hf"
         assert record["source_split"] == "train"
         assert Path(record["audio_path"]).exists()
+
+
+class TestHFWhere:
+    def test_parse_where(self):
+        from listenr.importers.hf import parse_where
+        assert parse_where(["language=cy", "accent=De Ddwyrain"]) == {
+            "language": "cy", "accent": "De Ddwyrain"}
+        assert parse_where(None) == {}
+        with pytest.raises(ValueError):
+            parse_where(["language"])
+
+    def test_matches(self):
+        from listenr.importers.hf import _matches
+        assert _matches({"language": "cy", "x": 1}, {"language": "cy"})
+        assert not _matches({"language": "en"}, {"language": "cy"})
+        assert _matches({"n": 3}, {"n": "3"})
