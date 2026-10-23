@@ -194,10 +194,10 @@ services:
     <<: *rocm-base
     # Merge is pure CPU matrix math — no GPU needed, and loading ROCm
     # device drivers causes a segfault during PeftModel.merge_and_unload().
+    # The service gets no /dev/kfd or /dev/dri, so the GPU stays invisible.
+    # It used to also set HIP_VISIBLE_DEVICES=-1, which ROCm 10.1 rejects
+    # outright: "Sequence '-1' in HIP_VISIBLE_DEVICES=-1 not recognized".
     environment:
-      # Force CPU-only execution — keeps ROCm HSA runtime fully uninitialised
-      HIP_VISIBLE_DEVICES: "-1"
-      CUDA_VISIBLE_DEVICES: "-1"
       # Same home as the other services, so the shared HF cache mount lands in
       # one place and expanduser('~') resolves somewhere the host UID owns.
       HOME: "/home/ubuntu"
