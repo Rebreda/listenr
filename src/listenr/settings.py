@@ -136,6 +136,29 @@ class FinetuneSettings(BaseModel):
     bf16: bool = False
     output_dir: ExpandedPath = Path("~/listenr_finetune").expanduser()
     eval_steps: int = 200
+    # Recompute activations in the backward pass to save memory. Costs roughly
+    # a third more compute; small models on large-memory GPUs don't need it.
+    gradient_checkpointing: bool = True
+    # Batch clips of similar length together. Moonshine's cost scales with
+    # audio length, so this cuts the compute spent on padding.
+    group_by_length: bool = True
+    # Evaluate on at most this many dev clips during training (a fixed random
+    # subset). Each eval runs generation, which dominates on a large dev set.
+    # 0 means all of dev.
+    eval_max_samples: int = 0
+    eval_batch_size: int = 0  # 0 means batch_size
+    # Copy batches through page-locked host memory. Pointless on an APU, where
+    # the GPU already reads system memory.
+    pin_memory: bool = True
+    # CPU processes for decoding audio and extracting features before
+    # training (0 = half the cores), and for collating batches while the GPU
+    # trains (0 = in the training process).
+    # Stop once dev WER has not improved by more than early_stopping_threshold
+    # (absolute WER points) for this many evaluations in a row. 0 = never.
+    early_stopping_patience: int = 0
+    early_stopping_threshold: float = 0.0
+    preprocess_workers: int = 0
+    dataloader_workers: int = 0
     save_steps: int = 400
     generation_max_length: int = 128
 

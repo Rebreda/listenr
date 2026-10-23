@@ -29,6 +29,7 @@ Examples:
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -154,6 +155,45 @@ def main() -> None:
                         help=f"LR warmup steps (default: {settings.finetune.warmup_steps})")
     parser.add_argument("--eval-steps",      type=int,   default=settings.finetune.eval_steps,
                         help=f"Evaluate every N steps (default: {settings.finetune.eval_steps})")
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=settings.finetune.gradient_checkpointing,
+        help="Trade about a third more compute for less activation memory "
+        f"(default: {settings.finetune.gradient_checkpointing})",
+    )
+    parser.add_argument(
+        "--group-by-length",
+        action=argparse.BooleanOptionalAction,
+        default=settings.finetune.group_by_length,
+        help="Batch clips of similar length to cut padding "
+        f"(default: {settings.finetune.group_by_length})",
+    )
+    parser.add_argument("--eval-max-samples", type=int, default=settings.finetune.eval_max_samples,
+                        help="Evaluate on at most N dev clips during training, a fixed random "
+                        "subset; 0 = all (default: %(default)s)")
+    parser.add_argument("--eval-batch-size", type=int, default=settings.finetune.eval_batch_size,
+                        help="Batch size for evaluation; 0 = --batch-size (default: %(default)s)")
+    parser.add_argument(
+        "--pin-memory",
+        action=argparse.BooleanOptionalAction,
+        default=settings.finetune.pin_memory,
+        help=f"Pin host memory for batches (default: {settings.finetune.pin_memory})",
+    )
+    parser.add_argument("--early-stopping-patience", type=int,
+                        default=settings.finetune.early_stopping_patience,
+                        help="Stop after this many evaluations without dev WER improving by more "
+                        "than --early-stopping-threshold; 0 = never (default: %(default)s)")
+    parser.add_argument("--early-stopping-threshold", type=float,
+                        default=settings.finetune.early_stopping_threshold,
+                        help="Smallest WER drop, in points, that counts as improving "
+                        "(default: %(default)s)")
+    parser.add_argument("--preprocess-workers", type=int, default=settings.finetune.preprocess_workers,
+                        help="Processes for decoding audio before training; 0 = half the "
+                        "CPU cores (default: %(default)s)")
+    parser.add_argument("--dataloader-workers", type=int, default=settings.finetune.dataloader_workers,
+                        help="Processes collating batches during training; 0 = none "
+                        "(default: %(default)s)")
     parser.add_argument("--save-steps",      type=int,   default=settings.finetune.save_steps,
                         help=f"Save checkpoint every N steps (default: {settings.finetune.save_steps})")
     # BooleanOptionalAction, not store_true: these default to the config file,
@@ -259,7 +299,8 @@ def main() -> None:
 
     logger.info(f"Loading dataset from {dataset_path}")
     processor = make_processor(args.base_model, args.language, args.task, arch)
-    dataset = make_dataset(dataset_path, processor, arch.feature_key)
+    preprocess_workers = args.preprocess_workers or max(1, (os.cpu_count() or 2) // 2)
+    dataset = make_dataset(dataset_path, processor, arch.feature_key, num_proc=preprocess_workers)
     logger.info(f"Dataset splits: { {k: len(v) for k, v in dataset.items()} }")
 
     # -----------------------------------------------------------------------
@@ -347,11 +388,16 @@ def main() -> None:
         learning_rate=args.learning_rate,
         warmup_steps=args.warmup_steps,
         max_steps=args.max_steps,
-        gradient_checkpointing=True,
+        gradient_checkpointing=args.gradient_checkpointing,
+        train_sampling_strategy="group_by_length" if args.group_by_length else "random",
+        length_column_name="length",
+        dataloader_pin_memory=args.pin_memory,
+        dataloader_num_workers=args.dataloader_workers,
+        dataloader_persistent_workers=args.dataloader_workers > 0,
         fp16=args.fp16,
         bf16=args.bf16,
         eval_strategy="steps",
-        per_device_eval_batch_size=max(1, args.batch_size // 2),
+        per_device_eval_batch_size=args.eval_batch_size or args.batch_size,
         predict_with_generate=True,
         generation_max_length=settings.finetune.generation_max_length,
         save_steps=args.save_steps,
@@ -366,6 +412,9 @@ def main() -> None:
 
     train_split = dataset.get("train")
     eval_split = dataset.get("dev") or dataset.get("test")
+    if eval_split is not None and args.eval_max_samples and len(eval_split) > args.eval_max_samples:
+        eval_split = eval_split.shuffle(seed=42).select(range(args.eval_max_samples))
+        logger.info(f"Evaluating on a fixed {args.eval_max_samples}-clip subset of dev during training")
 
     if train_split is None:
         logger.error("Dataset has no 'train' split.")
@@ -373,8 +422,22 @@ def main() -> None:
     if eval_split is None:
         logger.warning("No 'dev' or 'test' split found — evaluation will be skipped.")
 
+    callbacks = []
+    if args.early_stopping_patience > 0:
+        from transformers import EarlyStoppingCallback
+        # The best checkpoint is still the one kept: load_best_model_at_end.
+        callbacks.append(EarlyStoppingCallback(
+            early_stopping_patience=args.early_stopping_patience,
+            early_stopping_threshold=args.early_stopping_threshold,
+        ))
+        logger.info(
+            f"Early stopping after {args.early_stopping_patience} evaluations without "
+            f"dev WER improving by more than {args.early_stopping_threshold} points"
+        )
+
     trainer = Seq2SeqTrainer(
         args=training_args,
+        callbacks=callbacks,
         model=model,
         train_dataset=train_split,
         eval_dataset=eval_split,

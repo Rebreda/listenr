@@ -29,6 +29,11 @@ x-rocm-base: &rocm-base
     - SYS_PTRACE
   security_opt:
     - seccomp=unconfined
+    # SELinux confinement (Fedora, RHEL) blocks the ROCm runtime's doorbell
+    # mmap, which surfaces as "Memory critical error by agent node-0 ...
+    # Reason: Memory in use" and a segfault as soon as training starts on an
+    # APU such as Strix Halo (ROCm/ROCm#6182). Harmless where SELinux is off.
+    - label=disable
 
 services:
 
@@ -36,6 +41,11 @@ services:
   finetune:
     <<: *rocm-base
     ipc: host
+    # DataLoader workers hand batches over through /dev/shm. podman-compose
+    # does not always apply ipc: host, and the container default (64 MB) runs
+    # out at once: "unable to allocate shared memory(shm) ... No space left on
+    # device". Only matters with dataloader_workers > 0.
+    shm_size: "8g"
     # AMD's recommended pattern: pass the whole /dev/dri directory and let
     # HIP_VISIBLE_DEVICES select. Auto-handles any single- or multi-GPU
     # system without hardcoding card*/renderD* node numbers.
@@ -58,6 +68,11 @@ services:
       # container UID can write to them (matters with `userns_mode: keep-id`).
       MIOPEN_USER_DB_PATH: "/tmp/miopen"
       MIOPEN_CUSTOM_CACHE_DIR: "/tmp/miopen"
+      # Pick conv kernels from MIOpen's tuned database instead of timing them.
+      # On ROCm 10.1 / gfx1151 the timing step rejects every kernel for
+      # Moonshine's first conv ("No suitable algorithm"); on 7.2 it was
+      # simply slower (178 vs 166 ms per bf16 step).
+      MIOPEN_FIND_MODE: "${MIOPEN_FIND_MODE:-FAST}"
       # With userns_mode: keep-id, $HOME still points to /root inside the container,
       # but the process runs as the host UID which doesn't own /root. listenr resolves
       # config/cache paths via os.path.expanduser('~'), so it would fail to find the
@@ -133,6 +148,11 @@ services:
   eval:
     <<: *rocm-base
     ipc: host
+    # DataLoader workers hand batches over through /dev/shm. podman-compose
+    # does not always apply ipc: host, and the container default (64 MB) runs
+    # out at once: "unable to allocate shared memory(shm) ... No space left on
+    # device". Only matters with dataloader_workers > 0.
+    shm_size: "8g"
     devices:
       - /dev/kfd
       - /dev/dri
@@ -143,6 +163,11 @@ services:
       TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL: "${TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL:-1}"
       MIOPEN_USER_DB_PATH: "/tmp/miopen"
       MIOPEN_CUSTOM_CACHE_DIR: "/tmp/miopen"
+      # Pick conv kernels from MIOpen's tuned database instead of timing them.
+      # On ROCm 10.1 / gfx1151 the timing step rejects every kernel for
+      # Moonshine's first conv ("No suitable algorithm"); on 7.2 it was
+      # simply slower (178 vs 166 ms per bf16 step).
+      MIOPEN_FIND_MODE: "${MIOPEN_FIND_MODE:-FAST}"
       HOME: "/home/ubuntu"
     volumes:
       # Merged model produced by the merge service
@@ -169,10 +194,10 @@ services:
     <<: *rocm-base
     # Merge is pure CPU matrix math — no GPU needed, and loading ROCm
     # device drivers causes a segfault during PeftModel.merge_and_unload().
+    # The service gets no /dev/kfd or /dev/dri, so the GPU stays invisible.
+    # It used to also set HIP_VISIBLE_DEVICES=-1, which ROCm 10.1 rejects
+    # outright: "Sequence '-1' in HIP_VISIBLE_DEVICES=-1 not recognized".
     environment:
-      # Force CPU-only execution — keeps ROCm HSA runtime fully uninitialised
-      HIP_VISIBLE_DEVICES: "-1"
-      CUDA_VISIBLE_DEVICES: "-1"
       # Same home as the other services, so the shared HF cache mount lands in
       # one place and expanduser('~') resolves somewhere the host UID owns.
       HOME: "/home/ubuntu"
