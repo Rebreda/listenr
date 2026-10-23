@@ -1,9 +1,12 @@
 # Listenr — AMD ROCm fine-tuning image
 #
-# Base: official AMD-tested ROCm 7.2 + PyTorch 2.9.1 image (Python 3.12).
+# Base: official AMD ROCm 10.1 + PyTorch 2.14 image (Python 3.12). 2.14 is the
+# PyTorch build 10.1 supports on Radeon and Ryzen AI; 2.12/2.13 are Instinct-only.
+# Override to compare or fall back:
+#   podman build --build-arg BASE_IMAGE=rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1 -t listenr-rocm72 .
 # Ref:  https://rocm.docs.amd.com/en/latest/how_to/pytorch_install/pytorch_install.html
 #
-# Pull:  podman pull rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+# Pull:  podman pull rocm/pytorch:rocm10.1.0_ubuntu24.04_py3.12_pytorch_release_2.14.0
 # Build: podman build -t listenr-rocm .
 # Run:   see docs/finetune-amd.md
 #
@@ -11,7 +14,8 @@
 #       This image is intended for fine-tuning only (listenr finetune /
 #       listenr build-dataset), not real-time audio capture.
 
-FROM rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1
+ARG BASE_IMAGE=rocm/pytorch:rocm10.1.0_ubuntu24.04_py3.12_pytorch_release_2.14.0
+FROM ${BASE_IMAGE}
 
 # ── system packages ──────────────────────────────────────────────────────────
 # libsndfile1   : required by soundfile (audio I/O in finetune data pipeline)

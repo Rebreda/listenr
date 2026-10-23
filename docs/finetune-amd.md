@@ -56,8 +56,13 @@ podman build -t listenr-rocm .
 ```
 
 This layers `listenr[finetune]` on top of
-`rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1`  - AMD's
-tested-stable PyTorch container.
+`rocm/pytorch:rocm10.1.0_ubuntu24.04_py3.12_pytorch_release_2.14.0`  - AMD's
+tested-stable PyTorch container. To build on another base, for example the
+previous ROCm 7.2 image:
+
+```bash
+podman build --build-arg BASE_IMAGE=rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1 -t listenr-rocm .
+```
 
 The ROCm-aware PyTorch wheel is pinned during the build so `pip` cannot
 silently replace it with the CPU-only wheel from PyPI.
@@ -334,7 +339,7 @@ can cause imbalance segfaults during training.
 
 ### Unsupported gfx version
 
-Most cards do not need this. ROCm 7.2 supports RDNA3 (RX 7900 XTX/XT/GRE,
+Most cards do not need this. ROCm 10.1 supports RDNA3 (RX 7900 XTX/XT/GRE,
 7800 XT, 7700 XT), RDNA4 (RX 9070 and 9060 families) and Strix Halo
 (gfx1151) natively. Leave `HSA_OVERRIDE_GFX_VERSION` unset unless ROCm
 reports your device as unsupported.
