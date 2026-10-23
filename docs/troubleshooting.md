@@ -79,7 +79,7 @@ Two known causes:
 
 3. **Using `rocm/pytorch:latest`**: the `latest` tag can point to a preview
    or less-tested build. Use the specific stable tag:
-   `rocm/pytorch:rocm7.2_ubuntu24.04_py3.12_pytorch_release_2.9.1`
+   `rocm/pytorch:rocm10.1.0_ubuntu24.04_py3.12_pytorch_release_2.14.0`
 
 Your GPU's gfx version may not be natively supported by the ROCm version in the
 image. Override it:
