@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import random
 import re
 import sys
 import textwrap
@@ -108,14 +109,22 @@ def select_examples(
     rows: list[dict],
     n: int,
     keywords: list[str] | None = None,
+    seed: int | None = None,
 ) -> list[dict]:
-    """Return up to *n* evaluable rows from a dataset split.
+    """Return up to *n* evaluable rows from a dataset split (*n* <= 0: all).
 
     A row is evaluable when its audio file exists and it has a non-empty
     ``corrected_transcription`` (the ground truth).  If *keywords* is given,
     only rows whose ground truth contains at least one keyword are kept —
     these are the clips where the fine-tune had something to learn.
+
+    With *seed*, rows are drawn in a fixed random order instead of file
+    order. Corpus files are often grouped by speaker (Common Voice's are), so
+    the first *n* rows can cover a handful of voices: the first 1,000 of
+    Common Voice 27.0 Cornish test are 2 of its 8 speakers.
     """
+    if seed is not None:
+        rows = random.Random(seed).sample(rows, len(rows))
     kw = [k.lower() for k in keywords] if keywords else []
     selected = []
     for row in rows:
@@ -126,7 +135,7 @@ def select_examples(
         if kw and not any(k in row["corrected_transcription"].lower() for k in kw):
             continue
         selected.append(row)
-        if len(selected) >= n:
+        if 0 < n <= len(selected):
             break
     return selected
 
@@ -395,7 +404,7 @@ def evaluate_split(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     rows = load_split(Path(dataset_path), args.split)
-    examples = select_examples(rows, args.n, args.keywords or None)
+    examples = select_examples(rows, args.n, args.keywords or None, seed=args.sample_seed)
     if not examples:
         kw_note = (
             f" with '{', '.join(args.keywords)}' in the ground truth" if args.keywords else ""
@@ -453,6 +462,7 @@ def evaluate_split(args: argparse.Namespace) -> None:
             keywords=args.keywords,
             wer_pct=wer_pct,
             wer_normalization=args.normalizer,
+            sample_seed=args.sample_seed,
             keyword_recall={_PUBLIC_NAME[m]: t for m, t in keyword_tally.items()},
             clips=clip_records,
         ))
@@ -521,7 +531,17 @@ def main() -> None:
         "--n",
         type=int,
         default=DEFAULT_N,
-        help=f"Maximum number of clips to evaluate (default: {DEFAULT_N})",
+        help=f"Maximum number of clips to evaluate; 0 = the whole split (default: {DEFAULT_N})",
+    )
+    parser.add_argument(
+        "--sample-seed",
+        type=int,
+        default=None,
+        metavar="SEED",
+        help="Pick the --n clips at random with this seed instead of taking the "
+        "first --n. Corpus files are often sorted by speaker, so the first clips "
+        "can cover only a few voices. The same seed picks the same clips for "
+        "every model.",
     )
     parser.add_argument(
         "--keyword",

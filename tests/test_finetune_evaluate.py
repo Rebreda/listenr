@@ -133,6 +133,23 @@ class TestSelectExamples:
     def test_limit(self, rows):
         assert len(select_examples(rows, n=1)) == 1
 
+    def test_zero_means_all(self, rows):
+        assert len(select_examples(rows, n=0)) == 2
+
+    def test_seed_samples_across_the_file_and_is_repeatable(self, tmp_path):
+        # Files grouped by speaker: the first 50 rows are all speaker A.
+        rows = []
+        for i in range(100):
+            wav = tmp_path / f"{i}.wav"
+            wav.write_bytes(b"")
+            rows.append({"audio_path": str(wav), "corrected_transcription": f"s{i}",
+                         "speaker": "A" if i < 50 else "B"})
+        first = select_examples(rows, n=20)
+        assert {r["speaker"] for r in first} == {"A"}
+        sampled = select_examples(rows, n=20, seed=0)
+        assert {r["speaker"] for r in sampled} == {"A", "B"}
+        assert sampled == select_examples(rows, n=20, seed=0)
+
 
 # ---------------------------------------------------------------------------
 # WER
