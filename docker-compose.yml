@@ -41,6 +41,11 @@ services:
   finetune:
     <<: *rocm-base
     ipc: host
+    # DataLoader workers hand batches over through /dev/shm. podman-compose
+    # does not always apply ipc: host, and the container default (64 MB) runs
+    # out at once: "unable to allocate shared memory(shm) ... No space left on
+    # device". Only matters with dataloader_workers > 0.
+    shm_size: "8g"
     # AMD's recommended pattern: pass the whole /dev/dri directory and let
     # HIP_VISIBLE_DEVICES select. Auto-handles any single- or multi-GPU
     # system without hardcoding card*/renderD* node numbers.
@@ -143,6 +148,11 @@ services:
   eval:
     <<: *rocm-base
     ipc: host
+    # DataLoader workers hand batches over through /dev/shm. podman-compose
+    # does not always apply ipc: host, and the container default (64 MB) runs
+    # out at once: "unable to allocate shared memory(shm) ... No space left on
+    # device". Only matters with dataloader_workers > 0.
+    shm_size: "8g"
     devices:
       - /dev/kfd
       - /dev/dri
