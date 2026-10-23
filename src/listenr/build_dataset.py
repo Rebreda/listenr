@@ -518,6 +518,17 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--all-in",
+        choices=["train", "dev", "test"],
+        default=None,
+        metavar="SPLIT",
+        help=(
+            "Put every record in this one split, ignoring source splits and "
+            "--split. For evaluation-only sets, e.g. --all-in test for a corpus "
+            "you only want to score models on."
+        ),
+    )
+    parser.add_argument(
         "--train-from",
         action="append",
         default=[],
@@ -624,6 +635,17 @@ def main() -> None:
         logger.error("No valid entries found. Check your recordings directory.")
         sys.exit(1)
 
+    if args.all_in:
+        for entry in entries:
+            entry["split"] = args.all_in
+        logger.info(f"Splits: all {len(entries)} record(s) in {args.all_in} (--all-in).")
+        print_stats(entries)
+        if args.dry_run:
+            logger.info("Dry run — no files written.")
+            return
+        _write(entries, output_dir, args.format)
+        return
+
     promoted = 0
     if args.train_from and args.preserve_splits is not False:
         entries, promoted = promote_to_train(entries, args.train_from)
@@ -681,15 +703,19 @@ def main() -> None:
         logger.info("Dry run — no files written.")
         return
 
+    _write(entries, output_dir, args.format)
+
+
+def _write(entries: list[dict], output_dir: Path, fmt: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.format in ("csv", "both"):
+    if fmt in ("csv", "both"):
         for split_name in ("train", "dev", "test"):
             out_path = write_csv(entries, output_dir, split_name)
             n = sum(1 for e in entries if e["split"] == split_name)
             logger.info(f"Wrote {n:,} entries -> {out_path}")
 
-    if args.format in ("hf", "both"):
+    if fmt in ("hf", "both"):
         write_hf_dataset(entries, output_dir)
 
     logger.info(f"Dataset written to {output_dir}")
