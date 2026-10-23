@@ -76,6 +76,28 @@ class TestPrepareExample:
         assert "input_features" in result
         assert "labels" in result
 
+    def _prepare(self, ids, eos):
+        processor = MagicMock()
+        processor.feature_extractor.return_value.input_values = [np.zeros(8000, dtype=np.float32)]
+        processor.tokenizer.return_value.input_ids = ids
+        processor.tokenizer.eos_token_id = eos
+        return prepare_example(
+            {"audio_path": _make_audio_dict(), "corrected_transcription": "mae hen wlad"},
+            processor,
+            "input_values",
+        )["labels"]
+
+    def test_eos_appended_when_the_tokenizer_omits_it(self):
+        """Moonshine's tokenizer adds <s> but not </s>; without EOS the model never stops."""
+        assert self._prepare([1, 5, 6], eos=2) == [1, 5, 6, 2]
+
+    def test_eos_not_duplicated(self):
+        """Whisper's tokenizer already ends labels with EOS."""
+        assert self._prepare([1, 5, 6, 2], eos=2) == [1, 5, 6, 2]
+
+    def test_no_eos_known_leaves_labels_alone(self):
+        assert self._prepare([1, 5, 6], eos=None) == [1, 5, 6]
+
     def test_feature_extractor_called_with_correct_sample_rate(self):
         audio = _make_audio_dict(sample_rate=16000)
         processor = MagicMock()

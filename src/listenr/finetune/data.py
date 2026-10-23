@@ -76,7 +76,26 @@ def make_processor(
         processor = AutoProcessor.from_pretrained(model_id)
 
     _ensure_pad_token(processor, model_id)
+    _ensure_eos_token(processor, model_id)
     return processor
+
+
+def _ensure_eos_token(processor: Any, model_id: str) -> None:
+    """Give the tokenizer an EOS token when the checkpoint ships without one.
+
+    Moonshine's tokenizer prepends <s> but never appends </s>, and exposes no
+    special tokens, so labels carried no end-of-text token and the model was
+    never taught to stop: generation ran to max_length, repeating itself,
+    and WER went past 100%. The model config names eos_token_id, so read it
+    back from there; prepare_example appends it.
+    """
+    tokenizer = getattr(processor, "tokenizer", None)
+    if tokenizer is None or getattr(tokenizer, "eos_token", None) is not None:
+        return
+    config = _load_config(model_id)
+    token_id = getattr(config, "eos_token_id", None) if config is not None else None
+    if isinstance(token_id, int):
+        tokenizer.eos_token = tokenizer.convert_ids_to_tokens(token_id)
 
 
 def _ensure_pad_token(processor: Any, model_id: str) -> None:
@@ -206,6 +225,11 @@ def prepare_example(
     extracted = processor.feature_extractor(array, sampling_rate=target_sr)
 
     labels = processor.tokenizer(batch["corrected_transcription"]).input_ids
+    # Every label must end in EOS or the model never learns to stop. Whisper's
+    # tokenizer adds it; Moonshine's does not (see _ensure_eos_token).
+    eos = getattr(processor.tokenizer, "eos_token_id", None)
+    if isinstance(eos, int) and (not labels or labels[-1] != eos):
+        labels = list(labels) + [eos]
 
     features = getattr(extracted, feature_key)[0]
     # "length" lets the Trainer group clips of similar duration into a batch.
