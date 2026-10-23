@@ -29,6 +29,11 @@ x-rocm-base: &rocm-base
     - SYS_PTRACE
   security_opt:
     - seccomp=unconfined
+    # SELinux confinement (Fedora, RHEL) blocks the ROCm runtime's doorbell
+    # mmap, which surfaces as "Memory critical error by agent node-0 ...
+    # Reason: Memory in use" and a segfault as soon as training starts on an
+    # APU such as Strix Halo (ROCm/ROCm#6182). Harmless where SELinux is off.
+    - label=disable
 
 services:
 
