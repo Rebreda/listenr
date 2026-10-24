@@ -151,6 +151,23 @@ listenr import-hf mozilla-foundation/common_voice_17_0 --config en --split train
 # -> ~/.listenr/audio_clips/imports/hf/mozilla-foundation__common_voice_17_0/manifest.jsonl
 ```
 
+`--where COLUMN=VALUE` keeps only matching rows, for example the Welsh half of
+a bilingual corpus. Repeat it to combine conditions:
+
+```bash
+listenr import-hf cymen-arfor/lleisiau-arfor --split test --text-column sentence --where language=cy
+```
+
+### Evaluation-only sets
+
+To score models on a corpus you never train on (spontaneous speech, field
+recordings), build it with every record in the test split:
+
+```bash
+listenr build-dataset --manifest <import>/manifest.jsonl --output ~/eval_sets/arfor --format hf --all-in test
+listenr eval --model ~/listenr_merged --dataset ~/eval_sets/arfor/hf_dataset --normalizer basic --n 0
+```
+
 ### Building from imported manifests
 
 Use an imported manifest alone, or combine it with your own recordings:
