@@ -102,6 +102,7 @@ def eval_report(
     keyword_recall: dict[str, dict[str, list[int]]],
     clips: list[dict],
     wer_normalization: str = "english",
+    sample_seed: int | None = None,
 ) -> dict:
     """Assemble the full evaluation result.
 
@@ -118,6 +119,8 @@ def eval_report(
         "dataset": str(dataset) if dataset else None,
         "split": split,
         "n_requested": n_requested,
+        # None: the first n_requested clips in file order.
+        "sample_seed": sample_seed,
         "n_evaluated": len(clips),
         "keywords": list(keywords),
         "wer_normalization": f"whisper_{wer_normalization}",

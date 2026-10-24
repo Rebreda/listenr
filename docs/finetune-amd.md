@@ -257,6 +257,13 @@ language, pass `--normalizer basic`: the English normalizer strips diacritics
 and rewrites English spellings and numbers, which hides real errors in, say,
 Welsh, where `tŷ` and `ty` are different words.
 
+`--n` takes the first N clips of the split, in file order, and `--n 0` takes
+all of them. Corpus files are often sorted by speaker (Common Voice's are), so
+the first N clips can cover only a few voices: the first 1,000 of Common Voice
+27.0 Cornish test are 2 of its 8 speakers. Pass `--sample-seed 0` to draw the N
+clips at random instead. The same seed picks the same clips for every model,
+so results stay comparable.
+
 With `--keyword`, you also get a per-model recall summary across all matching clips:
 ```
   Keyword recall: fine-tuned

@@ -36,8 +36,33 @@ def _pick_audio_column(column_names: list[str], mapping: FieldMapping) -> str:
     )
 
 
-def _iter_rows(dataset_id: str, config: str | None, split: str | None, mapping: FieldMapping):
-    """Yield row dicts (with a ``split`` key) for a HF dataset, audio undecoded."""
+def parse_where(clauses: list[str] | None) -> dict[str, str]:
+    """``["language=cy", ...]`` -> ``{"language": "cy"}``."""
+    out = {}
+    for clause in clauses or []:
+        column, sep, value = clause.partition("=")
+        if not sep or not column:
+            raise ValueError(f"--where expects COLUMN=VALUE, got {clause!r}")
+        out[column] = value
+    return out
+
+
+def _matches(row: Mapping[str, Any], where: dict[str, str]) -> bool:
+    return all(str(row.get(column)) == value for column, value in where.items())
+
+
+def _iter_rows(
+    dataset_id: str,
+    config: str | None,
+    split: str | None,
+    mapping: FieldMapping,
+    where: dict[str, str] | None = None,
+):
+    """Yield row dicts (with a ``split`` key) for a HF dataset, audio undecoded.
+
+    *where* keeps only rows whose columns equal the given values, e.g.
+    ``{"language": "cy"}`` for the Welsh rows of a bilingual corpus.
+    """
     try:
         from datasets import Audio, load_dataset  # type: ignore
     except ImportError as exc:
@@ -60,6 +85,8 @@ def _iter_rows(dataset_id: str, config: str | None, split: str | None, mapping: 
             audio_col = _pick_audio_column(list(ds.column_names), mapping)
             ds = ds.cast_column(audio_col, Audio(decode=False))
             for row in ds:
+                if where and not _matches(row, where):
+                    continue
                 yield {**row, "split": row.get("split") or split_name}
 
     return generate()
@@ -73,8 +100,9 @@ def import_hf_dataset(
     split: str | None = None,
     mapping: FieldMapping = HF_MAPPING,
     append: bool = False,
+    where: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    rows = _iter_rows(dataset_id, config, split, mapping)
+    rows = _iter_rows(dataset_id, config, split, mapping, where)
     return m.import_rows(
         rows,
         source=SOURCE,
@@ -98,6 +126,12 @@ def main() -> None:
         default=None,
         help="Single split to import (e.g. 'train'). Omit to import all splits.",
     )
+    parser.add_argument(
+        "--where",
+        action="append",
+        metavar="COLUMN=VALUE",
+        help="Keep only rows whose COLUMN equals VALUE, e.g. --where language=cy. Repeatable.",
+    )
     add_common_arguments(parser)
     args = parser.parse_args()
     load_env()
@@ -109,6 +143,11 @@ def main() -> None:
     )
 
     try:
+        where = parse_where(args.where)
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    try:
         summary = import_hf_dataset(
             args.dataset_id,
             manifest_path=manifest_path,
@@ -116,6 +155,7 @@ def main() -> None:
             split=args.split,
             mapping=mapping,
             append=args.append,
+            where=where,
         )
     except RuntimeError as exc:
         logger.error(str(exc))

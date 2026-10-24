@@ -727,3 +727,36 @@ class TestCarveDev:
     def test_leaves_an_existing_dev_alone(self):
         entries = self._entries(40) + [{"uuid": "d", "split": "dev", "raw_transcription": "d"}]
         assert carve_dev(entries, 0.1) == 0
+
+
+# ---------------------------------------------------------------------------
+# --all-in: evaluation-only datasets
+# ---------------------------------------------------------------------------
+
+def test_all_in_puts_every_record_in_one_split(tmp_path, monkeypatch):
+    import csv
+    import sys
+
+    import numpy as np
+    import soundfile as sf
+
+    from listenr import build_dataset
+
+    manifest = tmp_path / "manifest.jsonl"
+    with manifest.open("w") as f:
+        for i, split in enumerate(["train", "dev", "validated", None]):
+            wav = tmp_path / f"{i}.wav"
+            sf.write(wav, np.zeros(32000, dtype="float32"), 16000)
+            rec = {"uuid": f"u{i}", "audio_path": str(wav), "raw_transcription": "mae hen wlad",
+                   "duration_s": 2.0, "sample_rate": 16000}
+            if split:
+                rec["source_split"] = split
+            f.write(json.dumps(rec) + "\n")
+    out = tmp_path / "out"
+    monkeypatch.setattr(sys, "argv", ["build-dataset", "--manifest", str(manifest), "--output", str(out),
+                                      "--format", "csv", "--all-in", "test"])
+    build_dataset.main()
+    with (out / "test.csv").open() as f:
+        assert sorted(r["uuid"] for r in csv.DictReader(f)) == ["u0", "u1", "u2", "u3"]
+    with (out / "train.csv").open() as f:
+        assert not list(csv.DictReader(f))
