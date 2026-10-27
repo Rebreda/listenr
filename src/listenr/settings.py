@@ -155,6 +155,9 @@ class FinetuneSettings(BaseModel):
     # trains (0 = in the training process).
     # Stop once dev WER has not improved by more than early_stopping_threshold
     # (absolute WER points) for this many evaluations in a row. 0 = never.
+    # Seed for weight init of new parameters (LoRA), data order and dropout.
+    # Same seed, same data: the same run. Change it to measure run-to-run noise.
+    seed: int = 42
     early_stopping_patience: int = 0
     early_stopping_threshold: float = 0.0
     preprocess_workers: int = 0

@@ -180,6 +180,8 @@ def main() -> None:
         default=settings.finetune.pin_memory,
         help=f"Pin host memory for batches (default: {settings.finetune.pin_memory})",
     )
+    parser.add_argument("--seed", type=int, default=settings.finetune.seed,
+                        help="Random seed for LoRA init, data order and dropout (default: %(default)s)")
     parser.add_argument("--early-stopping-patience", type=int,
                         default=settings.finetune.early_stopping_patience,
                         help="Stop after this many evaluations without dev WER improving by more "
@@ -310,6 +312,10 @@ def main() -> None:
         logger.info(f"Initialising {args.base_model}'s architecture with random weights")
     else:
         logger.info(f"Loading base model: {args.base_model}")
+    # Seed before building the model: LoRA's A matrices (and from-scratch
+    # weights) are initialised here, before the Trainer seeds anything.
+    from transformers import set_seed
+    set_seed(args.seed)
     model = load_base_model(args.base_model, from_scratch=args.from_scratch)
 
     # Set generation config to avoid deprecation warnings and force correct
@@ -389,6 +395,8 @@ def main() -> None:
         warmup_steps=args.warmup_steps,
         max_steps=args.max_steps,
         gradient_checkpointing=args.gradient_checkpointing,
+        seed=args.seed,
+        data_seed=args.seed,
         train_sampling_strategy="group_by_length" if args.group_by_length else "random",
         length_column_name="length",
         dataloader_pin_memory=args.pin_memory,
