@@ -51,6 +51,59 @@ def _resolve_dataset_path(dataset_arg: Path | None, dataset_output: Path) -> Pat
     return dataset_output / "hf_dataset"
 
 
+# Arguments that change how a run is executed but not what it trains, so a
+# run interrupted with one value may be resumed with another.
+RESUME_IGNORED_ARGS = {"resume", "output", "report_to", "dataloader_workers", "preprocess_workers",
+                       "pin_memory", "eval_batch_size"}
+
+
+def _run_identity(record: dict) -> dict:
+    """The parts of a run.json that must match for a checkpoint to be resumed."""
+    args = {k: v for k, v in record.get("args", {}).items() if k not in RESUME_IGNORED_ARGS}
+    return {"args": args, "base_model": record.get("base_model"), "dataset": record.get("dataset"),
+            "dataset_splits": record.get("dataset_splits")}
+
+
+def find_resume_checkpoint(output_dir: Path, run_record: dict, resume: bool) -> Path | None:
+    """The checkpoint to continue from, or None to start fresh.
+
+    Resumes only an unfinished run whose run.json describes the same run as
+    *run_record* (same arguments, base model and dataset). Raises SystemExit if
+    the directory holds checkpoints of a different or finished run, so they are
+    never mixed with this one. With ``resume=False`` existing checkpoints are
+    moved to ``previous-<time>/`` and the run starts over.
+    """
+    from transformers.trainer_utils import get_last_checkpoint
+
+    last = get_last_checkpoint(str(output_dir)) if output_dir.is_dir() else None
+    if last is None:
+        return None
+    if not resume:
+        from listenr.finetune import report
+        aside = output_dir / ("previous-" + report.utc_now().replace(":", "").replace("+0000", ""))
+        aside.mkdir()
+        for path in output_dir.glob("checkpoint-*"):
+            path.rename(aside / path.name)
+        logger.info(f"--no-resume: moved earlier checkpoints to {aside}")
+        return None
+    record_path = output_dir / "run.json"
+    if not record_path.exists():
+        sys.exit(f"{output_dir} has checkpoints but no run.json, so it cannot tell whether they belong "
+                 "to this run. Use another --output, or --no-resume to move them aside.")
+    import json
+    previous = json.loads(record_path.read_text())
+    if previous.get("status") == "completed":
+        sys.exit(f"{output_dir} holds a completed run. Use another --output, or --no-resume to "
+                 "move its checkpoints aside and train again.")
+    old, new = _run_identity(previous), _run_identity(run_record)
+    if old != new:
+        diff = sorted(k for k in set(old["args"]) | set(new["args"]) if old["args"].get(k) != new["args"].get(k))
+        diff += [k for k in ("base_model", "dataset", "dataset_splits") if old[k] != new[k]]
+        sys.exit(f"{output_dir} holds checkpoints of a different run (differs in: {', '.join(diff)}). "
+                 "Use another --output, or --no-resume to move them aside and start over.")
+    return Path(last)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Fine-tune Whisper or Moonshine on your listenr dataset, with LoRA or in full."
@@ -196,6 +249,13 @@ def main() -> None:
     parser.add_argument("--dataloader-workers", type=int, default=settings.finetune.dataloader_workers,
                         help="Processes collating batches during training; 0 = none "
                         "(default: %(default)s)")
+    parser.add_argument(
+        "--resume",
+        action=argparse.BooleanOptionalAction,
+        default=settings.finetune.resume,
+        help="Continue from the last checkpoint in --output if it was left by this same run; "
+        "--no-resume moves old checkpoints aside and starts over (default: %(default)s)",
+    )
     parser.add_argument("--save-steps",      type=int,   default=settings.finetune.save_steps,
                         help=f"Save checkpoint every N steps (default: {settings.finetune.save_steps})")
     # BooleanOptionalAction, not store_true: these default to the config file,
@@ -376,6 +436,15 @@ def main() -> None:
         accelerator=describe_accelerator_line(accelerator),
     )
     run_record_path = output_dir / "run.json"
+    resume_from = find_resume_checkpoint(output_dir, run_record, args.resume)
+    if resume_from is not None:
+        # Keep the original start time and note each resume.
+        import json
+        previous = json.loads(run_record_path.read_text())
+        run_record["started_utc"] = previous.get("started_utc", run_record["started_utc"])
+        run_record["resumed"] = previous.get("resumed", []) + [
+            {"from": resume_from.name, "utc": report.utc_now()}]
+        logger.info(f"Resuming from {resume_from}")
     report.write_json(run_record_path, run_record)
 
     data_collator = SpeechDataCollator(
@@ -455,7 +524,7 @@ def main() -> None:
     )
 
     logger.info("Starting training…")
-    trainer.train()
+    trainer.train(resume_from_checkpoint=str(resume_from) if resume_from else None)
 
     # LoRA saves only the adapter weights; full saves a standalone model.
     if args.method == "lora":

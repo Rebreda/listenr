@@ -160,6 +160,10 @@ class FinetuneSettings(BaseModel):
     seed: int = 42
     early_stopping_patience: int = 0
     early_stopping_threshold: float = 0.0
+    # Continue an interrupted run from its last checkpoint (weights, optimizer,
+    # schedule, data order) when the output directory holds one from the same
+    # run. A directory left by a different run is refused, never mixed.
+    resume: bool = True
     preprocess_workers: int = 0
     dataloader_workers: int = 0
     save_steps: int = 400
