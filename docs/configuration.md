@@ -94,6 +94,7 @@ pin_memory = true
 seed = 42                       # LoRA init, data order, dropout
 early_stopping_patience = 0     # 0 = never stop early
 early_stopping_threshold = 0.0  # WER points
+resume = true                   # continue an interrupted run from its last checkpoint
 preprocess_workers = 0  # 0 = half the CPU cores
 dataloader_workers = 0
 
