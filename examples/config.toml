@@ -76,6 +76,7 @@ pin_memory = true               # pinned host memory for batches; no use on an A
 seed = 42                       # change to measure run-to-run variation
 early_stopping_patience = 0     # stop after N evals without dev WER improving; 0 = never
 early_stopping_threshold = 0.0  # WER points an eval must improve by to count
+resume = true                   # continue an interrupted run from its last checkpoint (same run only)
 preprocess_workers = 0          # CPU processes decoding audio before training; 0 = half the cores
 dataloader_workers = 0          # CPU processes collating batches during training; 0 = none
 

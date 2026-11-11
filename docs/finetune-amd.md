@@ -130,6 +130,14 @@ losing the path setup.
 Adapter checkpoints land in `~/listenr_finetune/`, owned by your host UID
 (thanks to `userns_mode: keep-id` in the compose file).
 
+If a run is interrupted (power loss, Ctrl-C, a crash), run the same command
+again: training continues from the last checkpoint, with its optimizer,
+learning-rate schedule, data order and early-stopping count, so at most
+`save_steps` of work is repeated. It only resumes when `run.json` in the
+output directory describes the same run (same arguments, base model and
+dataset); checkpoints from a different or finished run are refused rather
+than mixed in. `--no-resume` moves them to `previous-<time>/` and starts over.
+
 ### Common flags
 
 | Flag | Default | Description |

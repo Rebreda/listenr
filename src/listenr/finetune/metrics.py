@@ -57,6 +57,9 @@ def make_compute_metrics(tokenizer: Any) -> Callable:
         # Replace -100 (padding / ignored tokens) with the pad token id so the
         # tokenizer can decode them without errors.
         label_ids[label_ids == -100] = tokenizer.pad_token_id
+        # The trainer pads generated ids of different lengths across eval
+        # batches with -100 too; a fast tokenizer can't decode negative ids.
+        pred_ids[pred_ids < 0] = tokenizer.pad_token_id
 
         pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
         label_str = tokenizer.batch_decode(label_ids, skip_special_tokens=True)
