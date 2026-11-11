@@ -271,7 +271,18 @@ def _generate_kwargs(model_id_or_path: str | Path) -> dict:
 
 def _transcribe(asr, audio_path: str | Path) -> str:
     kwargs = _generate_kwargs(asr.model.name_or_path)
-    return asr(str(audio_path), generate_kwargs=kwargs)["text"].strip()
+    audio: str | dict = str(audio_path)
+    # Moonshine streaming reshapes its input into 80-sample frames and its feature extractor only
+    # pads to that multiple when asked to pad, which the pipeline never does, so most clips raise.
+    multiple = getattr(asr.feature_extractor, "pad_to_multiple_of", None)
+    if multiple:
+        import numpy as np
+        from transformers.pipelines.audio_utils import ffmpeg_read
+
+        sr = asr.feature_extractor.sampling_rate
+        wav = ffmpeg_read(Path(audio_path).read_bytes(), sr)
+        audio = {"raw": np.pad(wav, (0, -len(wav) % multiple)), "sampling_rate": sr}
+    return asr(audio, generate_kwargs=kwargs)["text"].strip()
 
 
 def load_split(dataset_path: Path, split: str) -> list[dict]:

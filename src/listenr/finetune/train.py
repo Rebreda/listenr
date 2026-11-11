@@ -384,6 +384,12 @@ def main() -> None:
         model.generation_config.language = args.language
         model.generation_config.task = args.task
         model.generation_config.forced_decoder_ids = None
+    # Seq2SeqTrainer's evaluation leaves a full generation config on the model,
+    # defaults included (max_length 20). Moonshine streaming has no max_length
+    # of its own, so a saved full fine-tune would then stop every transcript at
+    # 20 tokens. Keep the config as loaded and save that.
+    import copy
+    base_generation_config = copy.deepcopy(model.generation_config)
 
     if args.method == "lora":
         lora_cfg = make_lora_config(
@@ -531,6 +537,7 @@ def main() -> None:
         logger.info(f"Saving LoRA adapter to {output_dir}")
     else:
         logger.info(f"Saving model to {output_dir} (standalone: no merge needed)")
+    model.generation_config = base_generation_config
     model.save_pretrained(str(output_dir))
     processor.save_pretrained(str(output_dir))
 

@@ -134,6 +134,23 @@ class TestMakeComputeMetrics:
         decoded_label_arg = tokenizer.batch_decode.call_args_list[1][0][0]
         assert -100 not in decoded_label_arg
 
+    def test_prediction_padding_replaced_before_decode(self, mock_evaluate):
+        """Generated ids padded with -100 across eval batches must decode (fast tokenizers reject negatives)."""
+        from listenr.finetune.metrics import make_compute_metrics
+
+        pad_id = 0
+        tokenizer = MagicMock()
+        tokenizer.pad_token_id = pad_id
+        tokenizer.batch_decode.return_value = ["hello", "hi"]
+
+        fn = make_compute_metrics(tokenizer)
+        pred = _make_pred([[1, 5, 2], [1, 2, -100]], [[5, -100, -100], [6, -100, -100]])
+        fn(pred)
+
+        decoded_pred_arg = tokenizer.batch_decode.call_args_list[0][0][0]
+        assert (decoded_pred_arg >= 0).all()
+        assert decoded_pred_arg[1, 2] == pad_id
+
     def test_result_wer_is_scaled_to_percent(self, mock_evaluate):
         """WER should be stored as a percentage (metric returns 0–1, we multiply by 100)."""
         _, metric = mock_evaluate
