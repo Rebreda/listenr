@@ -64,6 +64,19 @@ def _run_identity(record: dict) -> dict:
             "dataset_splits": record.get("dataset_splits")}
 
 
+def _last_checkpoint(output_dir: Path) -> Path | None:
+    """The newest ``checkpoint-<step>`` directory in *output_dir*, or None.
+
+    The same rule as transformers' ``get_last_checkpoint``, kept here so this
+    module does not import transformers (the test suite runs without it).
+    """
+    if not output_dir.is_dir():
+        return None
+    steps = [(int(p.name.split("-", 1)[1]), p) for p in output_dir.iterdir()
+             if p.is_dir() and p.name.startswith("checkpoint-") and p.name.split("-", 1)[1].isdigit()]
+    return max(steps)[1] if steps else None
+
+
 def find_resume_checkpoint(output_dir: Path, run_record: dict, resume: bool) -> Path | None:
     """The checkpoint to continue from, or None to start fresh.
 
@@ -73,9 +86,7 @@ def find_resume_checkpoint(output_dir: Path, run_record: dict, resume: bool) -> 
     never mixed with this one. With ``resume=False`` existing checkpoints are
     moved to ``previous-<time>/`` and the run starts over.
     """
-    from transformers.trainer_utils import get_last_checkpoint
-
-    last = get_last_checkpoint(str(output_dir)) if output_dir.is_dir() else None
+    last = _last_checkpoint(output_dir)
     if last is None:
         return None
     if not resume:
